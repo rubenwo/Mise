@@ -122,3 +122,23 @@ Generate the complete recipe JSON based on this input, filling in any missing de
 func SystemPrompt() string {
 	return systemPrompt
 }
+
+const reviewSystemPrompt = `You are a recipe reviewer. Check the recipe and return ONLY a JSON object with corrections. Be concise.
+
+Checks:
+- Every ingredient in the list is used in instructions, and vice versa
+- Quantities are realistic (not 500g salt or 1g chicken)
+- All units are metric: g, kg, ml, l, tsp, tbsp (no cups, ounces, pounds)
+- Instructions are in logical order
+- prep_time_minutes and cook_time_minutes match what the instructions describe
+- Ingredient amounts are proportional to the serving count
+
+If the recipe is correct, respond with exactly: {}
+If corrections are needed, respond with a JSON object containing ONLY the fields that need changing. For ingredients or instructions, include the full corrected array. Examples:
+{"prep_time_minutes": 20}
+{"ingredients": [{"name":"chicken breast","amount":500,"unit":"g"},{"name":"salt","amount":5,"unit":"g"}]}
+Do NOT return the full recipe. Do NOT add commentary.`
+
+func BuildReviewPrompt(recipeJSON string) (system string, user string) {
+	return reviewSystemPrompt, fmt.Sprintf("Review this recipe:\n\n%s", recipeJSON)
+}

@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -127,12 +129,58 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
+	if val, ok := updates["generation_timeout"]; ok {
+		if secs, err := strconv.Atoi(val); err == nil && secs >= 10 {
+			h.timeout = time.Duration(secs) * time.Second
+			h.reloadPool(r)
+		}
+	}
+
 	settings, err := h.queries.ListSettings(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list settings")
 		return
 	}
 	writeJSON(w, http.StatusOK, settings)
+}
+
+func (h *SettingsHandler) ListModels(w http.ResponseWriter, r *http.Request) {
+	host := r.URL.Query().Get("host")
+	if host == "" {
+		writeError(w, http.StatusBadRequest, "host query parameter is required")
+		return
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(host + "/api/tags")
+	if err != nil {
+		writeError(w, http.StatusBadGateway, fmt.Sprintf("failed to reach Ollama at %s: %v", host, err))
+		return
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		writeError(w, http.StatusBadGateway, fmt.Sprintf("Ollama returned %d: %s", resp.StatusCode, string(body)))
+		return
+	}
+
+	var tags struct {
+		Models []struct {
+			Name string `json:"name"`
+		} `json:"models"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to decode Ollama response")
+		return
+	}
+
+	names := make([]string, len(tags.Models))
+	for i, m := range tags.Models {
+		names[i] = m.Name
+	}
+
+	writeJSON(w, http.StatusOK, names)
 }
 
 func (h *SettingsHandler) reloadPool(r *http.Request) {

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -58,6 +59,15 @@ func main() {
 		log.Printf("Seeded default Ollama provider: %s (%s)", seed.Host, seed.Model)
 	}
 
+	// Apply DB-stored generation timeout if present, otherwise use config default
+	genTimeout := cfg.Ollama.GenerationTimeout
+	if val, err := queries.GetSetting(ctx, "generation_timeout"); err == nil {
+		if secs, err := strconv.Atoi(val); err == nil && secs >= 10 {
+			genTimeout = time.Duration(secs) * time.Second
+			log.Printf("Using generation timeout from settings: %v", genTimeout)
+		}
+	}
+
 	// Build client pool from enabled DB providers
 	providers, err := queries.ListEnabledOllamaProviders(ctx)
 	if err != nil {
@@ -68,7 +78,7 @@ func main() {
 		provConfigs[i] = llm.ProviderConfig{
 			Host:    p.Host,
 			Model:   p.Model,
-			Timeout: cfg.Ollama.GenerationTimeout,
+			Timeout: genTimeout,
 		}
 	}
 	clientPool := llm.NewClientPool(provConfigs)
@@ -95,7 +105,7 @@ func main() {
 	recipeHandler := handlers.NewRecipeHandler(queries)
 	generateHandler := handlers.NewGenerateHandler(orchestrator, queries)
 	mealPlanHandler := handlers.NewMealPlanHandler(queries, orchestrator)
-	settingsHandler := handlers.NewSettingsHandler(queries, clientPool, cfg.Ollama.GenerationTimeout)
+	settingsHandler := handlers.NewSettingsHandler(queries, clientPool, genTimeout)
 
 	router := server.NewRouter(recipeHandler, generateHandler, mealPlanHandler, settingsHandler, cfg.Server.CORSOrigin)
 

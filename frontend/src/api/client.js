@@ -94,6 +94,10 @@ export function listProviders() {
   return request('/settings/providers');
 }
 
+export function listModels(host) {
+  return request(`/settings/models?host=${encodeURIComponent(host)}`);
+}
+
 export function createProvider(provider) {
   return request('/settings/providers', {
     method: 'POST',

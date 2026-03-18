@@ -75,8 +75,14 @@ func (o *Orchestrator) Generate(ctx context.Context, userPrompt string, events c
 		messages = append(messages, resp.Message)
 
 		if len(resp.Message.ToolCalls) == 0 {
-			recipe, err := o.parseRecipe(resp.Message.Content, client, events)
-			return recipe, messages, err
+			recipe, err := o.parseRecipe(resp.Message.Content, client)
+			if err != nil {
+				return nil, messages, err
+			}
+			reviewMsgs := o.reviewRecipe(ctx, recipe, client, events)
+			messages = append(messages, reviewMsgs...)
+			events <- SSEEvent{Type: "recipe", Data: *recipe}
+			return recipe, messages, nil
 		}
 
 		for _, tc := range resp.Message.ToolCalls {
@@ -111,11 +117,67 @@ func (o *Orchestrator) Generate(ctx context.Context, userPrompt string, events c
 		return nil, messages, fmt.Errorf("final chat request failed: %w", err)
 	}
 	messages = append(messages, resp.Message)
-	recipe, err := o.parseRecipe(resp.Message.Content, client, events)
-	return recipe, messages, err
+	recipe, err := o.parseRecipe(resp.Message.Content, client)
+	if err != nil {
+		return nil, messages, err
+	}
+	reviewMsgs := o.reviewRecipe(ctx, recipe, client, events)
+	messages = append(messages, reviewMsgs...)
+	events <- SSEEvent{Type: "recipe", Data: *recipe}
+	return recipe, messages, nil
 }
 
-func (o *Orchestrator) parseRecipe(content string, client *Client, events chan<- SSEEvent) (*models.Recipe, error) {
+// reviewRecipe sends the recipe to the LLM for validation. The LLM returns a
+// partial JSON object containing only fields that need correction. Those
+// corrections are applied in-place on the recipe. If anything goes wrong the
+// original recipe is left unchanged.
+func (o *Orchestrator) reviewRecipe(ctx context.Context, recipe *models.Recipe, client *Client, events chan<- SSEEvent) []Message {
+	events <- SSEEvent{Type: "status", Message: "Reviewing recipe..."}
+
+	recipeJSON, err := json.Marshal(recipe)
+	if err != nil {
+		log.Printf("Recipe review: failed to serialize recipe: %v", err)
+		return nil
+	}
+
+	systemMsg, userMsg := BuildReviewPrompt(string(recipeJSON))
+	reviewMessages := []Message{
+		{Role: "system", Content: systemMsg},
+		{Role: "user", Content: userMsg},
+	}
+
+	resp, err := client.Chat(ctx, reviewMessages, nil)
+	if err != nil {
+		log.Printf("Recipe review: chat request failed: %v", err)
+		return reviewMessages
+	}
+	reviewMessages = append(reviewMessages, resp.Message)
+
+	content := strings.TrimSpace(resp.Message.Content)
+	if idx := strings.Index(content, "{"); idx >= 0 {
+		if endIdx := strings.LastIndex(content, "}"); endIdx >= idx {
+			content = content[idx : endIdx+1]
+		}
+	}
+
+	// Empty object means no corrections needed.
+	if content == "{}" {
+		return reviewMessages
+	}
+
+	// Unmarshal the patch on top of a copy, then apply only if valid.
+	patched := *recipe
+	if err := json.Unmarshal([]byte(content), &patched); err != nil {
+		log.Printf("Recipe review: failed to parse corrections: %v", err)
+		return reviewMessages
+	}
+
+	*recipe = patched
+	recipe.GeneratedByModel = client.Model()
+	return reviewMessages
+}
+
+func (o *Orchestrator) parseRecipe(content string, client *Client) (*models.Recipe, error) {
 	content = strings.TrimSpace(content)
 
 	if idx := strings.Index(content, "{"); idx >= 0 {
@@ -130,7 +192,5 @@ func (o *Orchestrator) parseRecipe(content string, client *Client, events chan<-
 	}
 
 	recipe.GeneratedByModel = client.Model()
-
-	events <- SSEEvent{Type: "recipe", Data: recipe}
 	return &recipe, nil
 }

@@ -42,6 +42,7 @@ func NewRouter(h *handlers.RecipeHandler, g *handlers.GenerateHandler, mp *handl
 		r.Delete("/plans/{id}/recipes/{recipeId}", mp.RemoveRecipe)
 		r.Patch("/plans/{id}/recipes/{recipeId}", mp.UpdateRecipe)
 
+		r.Get("/settings/models", s.ListModels)
 		r.Get("/settings/providers", s.ListProviders)
 		r.Post("/settings/providers", s.CreateProvider)
 		r.Patch("/settings/providers/{id}", s.UpdateProvider)

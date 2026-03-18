@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   listProviders, createProvider, updateProvider, deleteProvider,
-  getSettings, updateSettings,
+  getSettings, updateSettings, listModels,
 } from '../api/client';
 
 export default function SettingsPage() {
@@ -11,6 +11,33 @@ export default function SettingsPage() {
       <ProvidersSection />
       <GeneralSettings />
     </div>
+  );
+}
+
+function ModelInput({ host, value, onChange, id }) {
+  const [models, setModels] = useState([]);
+
+  useEffect(() => {
+    if (!host) { setModels([]); return; }
+    let cancelled = false;
+    listModels(host)
+      .then(data => { if (!cancelled) setModels(data || []); })
+      .catch(() => { if (!cancelled) setModels([]); });
+    return () => { cancelled = true; };
+  }, [host]);
+
+  return (
+    <>
+      <input
+        list={id}
+        value={value}
+        onChange={onChange}
+        placeholder="Model (e.g. qwen3.5:9b)"
+      />
+      <datalist id={id}>
+        {models.map(m => <option key={m} value={m} />)}
+      </datalist>
+    </>
   );
 }
 
@@ -78,10 +105,11 @@ function ProvidersSection() {
                   onChange={e => setEditing({ ...editing, host: e.target.value })}
                   placeholder="Host URL"
                 />
-                <input
+                <ModelInput
+                  host={editing.host}
                   value={editing.model}
                   onChange={e => setEditing({ ...editing, model: e.target.value })}
-                  placeholder="Model"
+                  id={`edit-models-${editing.id}`}
                 />
                 <div className="provider-edit-actions">
                   <button className="btn btn-primary" onClick={handleEditSave}>Save</button>
@@ -127,10 +155,11 @@ function ProvidersSection() {
             onChange={e => setForm({ ...form, host: e.target.value })}
             placeholder="Host URL (e.g. http://192.168.1.100:11434)"
           />
-          <input
+          <ModelInput
+            host={form.host}
             value={form.model}
             onChange={e => setForm({ ...form, model: e.target.value })}
-            placeholder="Model (e.g. qwen3.5:9b)"
+            id="add-models"
           />
         </div>
         <button

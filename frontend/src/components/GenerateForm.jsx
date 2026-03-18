@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { getSettings } from '../api/client';
 
 const CUISINES = ['', 'Italian', 'Mexican', 'Chinese', 'Japanese', 'Indian', 'Thai', 'French', 'Mediterranean', 'American', 'Korean'];
 const DIFFICULTIES = ['', 'easy', 'medium', 'hard'];
@@ -15,6 +16,13 @@ export default function GenerateForm({ onGenerate, loading }) {
     additional_notes: '',
     count: 3,
   });
+
+  useEffect(() => {
+    getSettings().then(data => {
+      const s = (data || []).find(s => s.key === 'default_servings');
+      if (s) setForm(prev => ({ ...prev, servings: parseInt(s.value) || 4 }));
+    }).catch(() => {});
+  }, []);
 
   const toggleDietary = (item) => {
     setForm(prev => ({
