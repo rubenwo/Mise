@@ -7,13 +7,13 @@ import (
 	"github.com/rubenwoldhuis/recipes/internal/handlers"
 )
 
-func NewRouter(h *handlers.RecipeHandler, g *handlers.GenerateHandler, corsOrigin string) *chi.Mux {
+func NewRouter(h *handlers.RecipeHandler, g *handlers.GenerateHandler, mp *handlers.MealPlanHandler, corsOrigin string) *chi.Mux {
 	r := chi.NewRouter()
 
 	r.Use(LoggingMiddleware)
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{corsOrigin},
-		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Content-Type"},
 		AllowCredentials: false,
 		MaxAge:           300,
@@ -29,6 +29,18 @@ func NewRouter(h *handlers.RecipeHandler, g *handlers.GenerateHandler, corsOrigi
 		r.Post("/generate/single", g.Single)
 		r.Post("/generate/batch", g.Batch)
 		r.Post("/generate/refine", g.Refine)
+		r.Post("/generate/import", g.Import)
+
+		r.Post("/plans", mp.Create)
+		r.Get("/plans", mp.List)
+		r.Get("/plans/{id}", mp.Get)
+		r.Patch("/plans/{id}", mp.Update)
+		r.Delete("/plans/{id}", mp.Delete)
+		r.Get("/plans/{id}/ingredients", mp.Ingredients)
+		r.Post("/plans/{id}/suggestions", mp.Suggestions)
+		r.Post("/plans/{id}/recipes", mp.AddRecipe)
+		r.Delete("/plans/{id}/recipes/{recipeId}", mp.RemoveRecipe)
+		r.Patch("/plans/{id}/recipes/{recipeId}", mp.UpdateRecipe)
 	})
 
 	r.Handle("/*", frontend.Handler())

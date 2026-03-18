@@ -39,6 +39,56 @@ export function searchRecipes(params) {
   });
 }
 
+// Meal Plans
+export function createPlan(name) {
+  return request('/plans', { method: 'POST', body: JSON.stringify({ name }) });
+}
+
+export function listPlans() {
+  return request('/plans');
+}
+
+export function getPlan(id) {
+  return request(`/plans/${id}`);
+}
+
+export function updatePlan(id, data) {
+  return request(`/plans/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+}
+
+export function deletePlan(id) {
+  return request(`/plans/${id}`, { method: 'DELETE' });
+}
+
+export function addRecipeToPlan(planId, recipeId, servings) {
+  return request(`/plans/${planId}/recipes`, {
+    method: 'POST',
+    body: JSON.stringify({ recipe_id: recipeId, servings }),
+  });
+}
+
+export function removeRecipeFromPlan(planId, recipeId) {
+  return request(`/plans/${planId}/recipes/${recipeId}`, { method: 'DELETE' });
+}
+
+export function updatePlanRecipe(planId, recipeId, data) {
+  return request(`/plans/${planId}/recipes/${recipeId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+export function getPlanSuggestions(planId, ingredients) {
+  return request(`/plans/${planId}/suggestions`, {
+    method: 'POST',
+    body: JSON.stringify({ ingredients }),
+  });
+}
+
+export function getPlanIngredients(planId) {
+  return request(`/plans/${planId}/ingredients`);
+}
+
 export function generateStream(endpoint, body) {
   return fetch(`${API_BASE}/generate/${endpoint}`, {
     method: 'POST',

@@ -82,6 +82,43 @@ The user wants the following changes: %s
 Generate an improved version of this recipe incorporating the feedback. Respond with the complete updated recipe JSON.`, recipe.Title, recipe.Description, recipe.CuisineType, feedback)
 }
 
+func BuildLeftoverPrompt(ingredients []string, existingTitles []string) string {
+	prompt := fmt.Sprintf(`The user has leftover ingredients from meal planning and wants a recipe that uses them up.
+
+Leftover ingredients: %s
+
+Generate a recipe that uses as many of these ingredients as possible. Prioritize using the fresh/perishable items.
+Use web_search to find inspiration for recipes that combine these ingredients well.
+Use db_search to check if a similar recipe already exists.`, strings.Join(ingredients, ", "))
+
+	if len(existingTitles) > 0 {
+		prompt += "\n\nDo NOT duplicate any of these existing recipes: " + strings.Join(existingTitles, ", ") + "."
+	}
+
+	return prompt
+}
+
+func BuildImportPrompt(rawText string, existingTitles []string) string {
+	prompt := fmt.Sprintf(`The user wants to import an existing recipe from free-form text. Parse the following text and produce a complete, structured recipe.
+
+The text may only contain a recipe name, or it may include partial ingredients and instructions. Use your tools:
+- Use web_search to find the full recipe details (ingredients, instructions, cooking times) if they are missing or incomplete
+- Use db_search to check if a similar recipe already exists in the database
+
+Here is the user's input:
+---
+%s
+---
+
+Generate the complete recipe JSON based on this input, filling in any missing details from your search results.`, rawText)
+
+	if len(existingTitles) > 0 {
+		prompt += "\n\nThese recipes already exist in the database: " + strings.Join(existingTitles, ", ") + ". Flag if this is a duplicate but still generate the recipe."
+	}
+
+	return prompt
+}
+
 func SystemPrompt() string {
 	return systemPrompt
 }

@@ -57,8 +57,9 @@ func main() {
 
 	recipeHandler := handlers.NewRecipeHandler(queries)
 	generateHandler := handlers.NewGenerateHandler(orchestrator, queries)
+	mealPlanHandler := handlers.NewMealPlanHandler(queries, orchestrator)
 
-	router := server.NewRouter(recipeHandler, generateHandler, cfg.Server.CORSOrigin)
+	router := server.NewRouter(recipeHandler, generateHandler, mealPlanHandler, cfg.Server.CORSOrigin)
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.Server.Port),

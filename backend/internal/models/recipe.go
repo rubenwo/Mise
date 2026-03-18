@@ -49,6 +49,10 @@ type RefineRequest struct {
 	Feedback string `json:"feedback"`
 }
 
+type ImportRequest struct {
+	RawText string `json:"raw_text"`
+}
+
 type SearchRequest struct {
 	Query               string   `json:"query"`
 	CuisineType         string   `json:"cuisine_type"`

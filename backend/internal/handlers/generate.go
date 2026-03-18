@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -72,10 +73,11 @@ func (h *GenerateHandler) Batch(w http.ResponseWriter, r *http.Request) {
 			defer close(events)
 			prompt := llm.BuildGeneratePrompt(req.GenerateRequest, titles)
 			prompt += fmt.Sprintf(" (Recipe %d of %d — make it unique from others in this batch)", i+1, req.Count)
-			_, err := h.orchestrator.Generate(r.Context(), prompt, events)
+			_, messages, err := h.orchestrator.Generate(r.Context(), prompt, events)
 			if err != nil {
 				events <- llm.SSEEvent{Type: "error", Message: err.Error()}
 			}
+			h.saveChat(prompt, messages)
 		}()
 
 		for event := range events {
@@ -86,6 +88,27 @@ func (h *GenerateHandler) Batch(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
+}
+
+func (h *GenerateHandler) Import(w http.ResponseWriter, r *http.Request) {
+	var req models.ImportRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.RawText == "" {
+		writeError(w, http.StatusBadRequest, "raw_text is required")
+		return
+	}
+
+	titles, err := h.queries.ListRecipeTitles(r.Context())
+	if err != nil {
+		log.Printf("Warning: could not fetch existing titles: %v", err)
+	}
+
+	prompt := llm.BuildImportPrompt(req.RawText, titles)
+	h.streamGeneration(w, r, prompt)
 }
 
 func (h *GenerateHandler) Refine(w http.ResponseWriter, r *http.Request) {
@@ -119,11 +142,12 @@ func (h *GenerateHandler) streamGeneration(w http.ResponseWriter, r *http.Reques
 
 	go func() {
 		defer close(events)
-		_, err := h.orchestrator.Generate(r.Context(), prompt, events)
+		_, messages, err := h.orchestrator.Generate(r.Context(), prompt, events)
 		if err != nil {
 			log.Printf("Generation error: %v", err)
 			events <- llm.SSEEvent{Type: "error", Message: err.Error()}
 		}
+		h.saveChat(prompt, messages)
 	}()
 
 	for event := range events {
@@ -132,5 +156,16 @@ func (h *GenerateHandler) streamGeneration(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		flusher.Flush()
+	}
+}
+
+func (h *GenerateHandler) saveChat(prompt string, messages []llm.Message) {
+	messagesJSON, err := json.Marshal(messages)
+	if err != nil {
+		log.Printf("Failed to marshal chat messages: %v", err)
+		return
+	}
+	if err := h.queries.CreateGenerationChat(context.Background(), prompt, h.orchestrator.Model(), messagesJSON); err != nil {
+		log.Printf("Failed to save generation chat: %v", err)
 	}
 }

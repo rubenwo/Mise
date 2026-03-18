@@ -43,7 +43,11 @@ func NewOrchestrator(client *Client, toolExecutor ToolExecutor, maxIterations in
 	}
 }
 
-func (o *Orchestrator) Generate(ctx context.Context, userPrompt string, events chan<- SSEEvent) (*models.Recipe, error) {
+func (o *Orchestrator) Model() string {
+	return o.client.Model()
+}
+
+func (o *Orchestrator) Generate(ctx context.Context, userPrompt string, events chan<- SSEEvent) (*models.Recipe, []Message, error) {
 	events <- SSEEvent{Type: "status", Message: "Starting recipe generation..."}
 
 	messages := []Message{
@@ -56,14 +60,15 @@ func (o *Orchestrator) Generate(ctx context.Context, userPrompt string, events c
 
 		resp, err := o.client.Chat(ctx, messages, o.tools)
 		if err != nil {
-			return nil, fmt.Errorf("chat request failed: %w", err)
-		}
-
-		if len(resp.Message.ToolCalls) == 0 {
-			return o.parseRecipe(resp.Message.Content, events)
+			return nil, messages, fmt.Errorf("chat request failed: %w", err)
 		}
 
 		messages = append(messages, resp.Message)
+
+		if len(resp.Message.ToolCalls) == 0 {
+			recipe, err := o.parseRecipe(resp.Message.Content, events)
+			return recipe, messages, err
+		}
 
 		for _, tc := range resp.Message.ToolCalls {
 			events <- SSEEvent{
@@ -94,9 +99,11 @@ func (o *Orchestrator) Generate(ctx context.Context, userPrompt string, events c
 	events <- SSEEvent{Type: "status", Message: "Max iterations reached, generating final recipe..."}
 	resp, err := o.client.Chat(ctx, messages, nil)
 	if err != nil {
-		return nil, fmt.Errorf("final chat request failed: %w", err)
+		return nil, messages, fmt.Errorf("final chat request failed: %w", err)
 	}
-	return o.parseRecipe(resp.Message.Content, events)
+	messages = append(messages, resp.Message)
+	recipe, err := o.parseRecipe(resp.Message.Content, events)
+	return recipe, messages, err
 }
 
 func (o *Orchestrator) parseRecipe(content string, events chan<- SSEEvent) (*models.Recipe, error) {

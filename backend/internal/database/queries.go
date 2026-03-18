@@ -174,6 +174,14 @@ func (q *Queries) SearchRecipes(ctx context.Context, req models.SearchRequest) (
 	return scanRecipes(rows, total)
 }
 
+func (q *Queries) CreateGenerationChat(ctx context.Context, prompt, model string, messagesJSON []byte) error {
+	_, err := q.pool.Exec(ctx, `
+		INSERT INTO generation_chats (prompt, model, messages) VALUES ($1, $2, $3)`,
+		prompt, model, messagesJSON,
+	)
+	return err
+}
+
 func scanRecipes(rows pgx.Rows, total int) ([]models.Recipe, int, error) {
 	var recipes []models.Recipe
 	for rows.Next() {
