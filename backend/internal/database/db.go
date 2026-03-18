@@ -2,13 +2,15 @@ package database
 
 import (
 	"context"
+	"embed"
 	"fmt"
-	"os"
-	"path/filepath"
-	"runtime"
+	"sort"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+//go:embed migrations/*.sql
+var migrationsFS embed.FS
 
 func NewPool(ctx context.Context, connString string) (*pgxpool.Pool, error) {
 	pool, err := pgxpool.New(ctx, connString)
@@ -25,20 +27,21 @@ func NewPool(ctx context.Context, connString string) (*pgxpool.Pool, error) {
 }
 
 func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
-	_, thisFile, _, _ := runtime.Caller(0)
-	migrationsDir := filepath.Join(filepath.Dir(thisFile), "migrations")
-
-	entries, err := os.ReadDir(migrationsDir)
+	entries, err := migrationsFS.ReadDir("migrations")
 	if err != nil {
-		return fmt.Errorf("reading migrations directory: %w", err)
+		return fmt.Errorf("reading migrations: %w", err)
 	}
 
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].Name() < entries[j].Name()
+	})
+
 	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".sql" {
+		if entry.IsDir() {
 			continue
 		}
 
-		sql, err := os.ReadFile(filepath.Join(migrationsDir, entry.Name()))
+		sql, err := migrationsFS.ReadFile("migrations/" + entry.Name())
 		if err != nil {
 			return fmt.Errorf("reading migration %s: %w", entry.Name(), err)
 		}
