@@ -3,6 +3,7 @@ package server
 import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/cors"
+	"github.com/rubenwoldhuis/recipes/internal/frontend"
 	"github.com/rubenwoldhuis/recipes/internal/handlers"
 )
 
@@ -29,6 +30,8 @@ func NewRouter(h *handlers.RecipeHandler, g *handlers.GenerateHandler, corsOrigi
 		r.Post("/generate/batch", g.Batch)
 		r.Post("/generate/refine", g.Refine)
 	})
+
+	r.Handle("/*", frontend.Handler())
 
 	return r
 }

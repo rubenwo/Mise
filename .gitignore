@@ -23,6 +23,10 @@ Thumbs.db
 node_modules/
 frontend/dist/
 
+# Embedded frontend build artifacts (keep .gitkeep)
+backend/internal/frontend/dist/*
+!backend/internal/frontend/dist/.gitkeep
+
 # Go
 /backend/vendor/
 
