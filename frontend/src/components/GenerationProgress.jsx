@@ -1,9 +1,15 @@
 export default function GenerationProgress({ events }) {
   if (events.length === 0) return null;
 
+  const lastEvent = events[events.length - 1];
+  const isActive = lastEvent.type !== 'error';
+
   return (
     <div className="generation-progress">
-      <h3>Generation Progress</h3>
+      <div className="progress-header">
+        <h3>Generation Progress</h3>
+        {isActive && <span className="loading-dots"><span /><span /><span /></span>}
+      </div>
       <div className="events-list">
         {events.map((event, i) => (
           <div key={i} className={`event event-${event.type}`}>

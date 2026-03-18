@@ -4,14 +4,13 @@ export default function RecipeDetail({ recipe }) {
       <div className="recipe-detail-header">
         <h2>{recipe.title}</h2>
         {recipe.cuisine_type && <span className="cuisine-badge">{recipe.cuisine_type}</span>}
-      </div>
-      <p className="recipe-description">{recipe.description}</p>
-
-      <div className="recipe-meta">
-        {recipe.prep_time_minutes > 0 && <span>Prep: {recipe.prep_time_minutes} min</span>}
-        {recipe.cook_time_minutes > 0 && <span>Cook: {recipe.cook_time_minutes} min</span>}
-        <span>Servings: {recipe.servings}</span>
-        {recipe.difficulty && <span className={`difficulty difficulty-${recipe.difficulty}`}>{recipe.difficulty}</span>}
+        <p className="recipe-description">{recipe.description}</p>
+        <div className="recipe-meta">
+          {recipe.prep_time_minutes > 0 && <span>{'\u23F1'} Prep: {recipe.prep_time_minutes} min</span>}
+          {recipe.cook_time_minutes > 0 && <span>{'\uD83D\uDD25'} Cook: {recipe.cook_time_minutes} min</span>}
+          <span>{'\uD83C\uDF7D'} Servings: {recipe.servings}</span>
+          {recipe.difficulty && <span className={`difficulty difficulty-${recipe.difficulty}`}>{recipe.difficulty}</span>}
+        </div>
       </div>
 
       {recipe.dietary_restrictions && recipe.dietary_restrictions.length > 0 && (
@@ -20,26 +19,28 @@ export default function RecipeDetail({ recipe }) {
         </div>
       )}
 
-      <section className="recipe-section">
-        <h3>Ingredients</h3>
-        <ul className="ingredients-list">
-          {recipe.ingredients && recipe.ingredients.map((ing, i) => (
-            <li key={i}>
-              <strong>{ing.amount} {ing.unit}</strong> {ing.name}
-              {ing.notes && <span className="ingredient-notes"> ({ing.notes})</span>}
-            </li>
-          ))}
-        </ul>
-      </section>
+      <div className="recipe-body">
+        <section className="recipe-section recipe-ingredients">
+          <h3>Ingredients</h3>
+          <ul className="ingredients-list">
+            {recipe.ingredients && recipe.ingredients.map((ing, i) => (
+              <li key={i}>
+                <strong>{ing.amount} {ing.unit}</strong> {ing.name}
+                {ing.notes && <span className="ingredient-notes"> ({ing.notes})</span>}
+              </li>
+            ))}
+          </ul>
+        </section>
 
-      <section className="recipe-section">
-        <h3>Instructions</h3>
-        <ol className="instructions-list">
-          {recipe.instructions && recipe.instructions.map((step, i) => (
-            <li key={i}>{step}</li>
-          ))}
-        </ol>
-      </section>
+        <section className="recipe-section recipe-instructions">
+          <h3>Instructions</h3>
+          <ol className="instructions-list">
+            {recipe.instructions && recipe.instructions.map((step, i) => (
+              <li key={i}>{step}</li>
+            ))}
+          </ol>
+        </section>
+      </div>
 
       {recipe.tags && recipe.tags.length > 0 && (
         <div className="recipe-tags">

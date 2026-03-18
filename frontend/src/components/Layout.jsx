@@ -7,7 +7,7 @@ export default function Layout({ children }) {
     <div className="app">
       <header className="header">
         <div className="header-content">
-          <Link to="/" className="logo">Recipe Generator</Link>
+          <Link to="/" className="logo">Eten</Link>
           <nav className="nav">
             <Link to="/" className={location.pathname === '/' ? 'active' : ''}>Generate</Link>
             <Link to="/library" className={location.pathname === '/library' ? 'active' : ''}>Library</Link>

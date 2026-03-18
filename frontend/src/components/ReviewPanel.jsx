@@ -33,7 +33,7 @@ export default function ReviewPanel({ recipes, onRefine, loading }) {
       <h3>Generated Recipes</h3>
       {recipes.map((recipe, i) => (
         <div key={i} className="review-item">
-          <RecipeCard recipe={recipe} />
+          <RecipeCard recipe={recipe} showIngredients />
           <div className="review-actions">
             {saved[i] ? (
               <span className="saved-badge">Saved!</span>

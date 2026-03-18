@@ -6,16 +6,18 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/rubenwoldhuis/recipes/internal/database"
 	"github.com/rubenwoldhuis/recipes/internal/llm"
 	"github.com/rubenwoldhuis/recipes/internal/models"
 )
 
 type GenerateHandler struct {
 	orchestrator *llm.Orchestrator
+	queries      *database.Queries
 }
 
-func NewGenerateHandler(o *llm.Orchestrator) *GenerateHandler {
-	return &GenerateHandler{orchestrator: o}
+func NewGenerateHandler(o *llm.Orchestrator, q *database.Queries) *GenerateHandler {
+	return &GenerateHandler{orchestrator: o, queries: q}
 }
 
 func (h *GenerateHandler) Single(w http.ResponseWriter, r *http.Request) {
@@ -25,7 +27,12 @@ func (h *GenerateHandler) Single(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	prompt := llm.BuildGeneratePrompt(req)
+	titles, err := h.queries.ListRecipeTitles(r.Context())
+	if err != nil {
+		log.Printf("Warning: could not fetch existing titles: %v", err)
+	}
+
+	prompt := llm.BuildGeneratePrompt(req, titles)
 	h.streamGeneration(w, r, prompt)
 }
 
@@ -53,12 +60,17 @@ func (h *GenerateHandler) Batch(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
+	titles, err := h.queries.ListRecipeTitles(r.Context())
+	if err != nil {
+		log.Printf("Warning: could not fetch existing titles: %v", err)
+	}
+
 	for i := 0; i < req.Count; i++ {
 		events := make(chan llm.SSEEvent, 10)
 
 		go func() {
 			defer close(events)
-			prompt := llm.BuildGeneratePrompt(req.GenerateRequest)
+			prompt := llm.BuildGeneratePrompt(req.GenerateRequest, titles)
 			prompt += fmt.Sprintf(" (Recipe %d of %d — make it unique from others in this batch)", i+1, req.Count)
 			_, err := h.orchestrator.Generate(r.Context(), prompt, events)
 			if err != nil {

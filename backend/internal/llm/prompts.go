@@ -19,7 +19,7 @@ IMPORTANT: You MUST respond with valid JSON matching this exact structure:
   "servings": 4,
   "difficulty": "easy",
   "ingredients": [
-    {"name": "ingredient name", "amount": 1.5, "unit": "cups", "notes": "optional notes"}
+    {"name": "ingredient name", "amount": 200, "unit": "g", "notes": "optional notes"}
   ],
   "instructions": [
     "Step 1: Do something",
@@ -32,12 +32,13 @@ IMPORTANT: You MUST respond with valid JSON matching this exact structure:
 Rules:
 - difficulty must be one of: easy, medium, hard
 - All amounts must be numbers (not strings)
+- Use metric units: grams (g), kilograms (kg), milliliters (ml), liters (l). Teaspoons (tsp) and tablespoons (tbsp) are also acceptable for small amounts. Do NOT use cups, ounces, pounds, or other imperial units.
 - Include at least 3 ingredients and 3 instructions
 - Be specific with measurements and cooking times
-- Use your tools to search for inspiration and avoid duplicating the user's existing recipes
+- Use your tools to search for recipe inspiration from the web
 - Respond ONLY with the JSON object, no other text`
 
-func BuildGeneratePrompt(req models.GenerateRequest) string {
+func BuildGeneratePrompt(req models.GenerateRequest, existingTitles []string) string {
 	var parts []string
 	parts = append(parts, "Generate a dinner recipe")
 
@@ -60,7 +61,13 @@ func BuildGeneratePrompt(req models.GenerateRequest) string {
 		parts = append(parts, fmt.Sprintf("with these preferences: %s", req.AdditionalNotes))
 	}
 
-	return strings.Join(parts, " ") + "."
+	prompt := strings.Join(parts, " ") + "."
+
+	if len(existingTitles) > 0 {
+		prompt += "\n\nDo NOT duplicate any of these existing recipes: " + strings.Join(existingTitles, ", ") + "."
+	}
+
+	return prompt
 }
 
 func BuildRefinePrompt(recipe models.Recipe, feedback string) string {

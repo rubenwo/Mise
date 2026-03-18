@@ -103,6 +103,24 @@ func (q *Queries) DeleteRecipe(ctx context.Context, id int) error {
 	return nil
 }
 
+func (q *Queries) ListRecipeTitles(ctx context.Context) ([]string, error) {
+	rows, err := q.pool.Query(ctx, "SELECT title FROM recipes ORDER BY created_at DESC")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var titles []string
+	for rows.Next() {
+		var title string
+		if err := rows.Scan(&title); err != nil {
+			return nil, err
+		}
+		titles = append(titles, title)
+	}
+	return titles, rows.Err()
+}
+
 func (q *Queries) SearchRecipes(ctx context.Context, req models.SearchRequest) ([]models.Recipe, int, error) {
 	if req.Limit <= 0 {
 		req.Limit = 20

@@ -56,7 +56,7 @@ func main() {
 	orchestrator := llm.NewOrchestrator(ollamaClient, executor, cfg.Ollama.MaxToolIterations, cfg.Edamam.Enabled())
 
 	recipeHandler := handlers.NewRecipeHandler(queries)
-	generateHandler := handlers.NewGenerateHandler(orchestrator)
+	generateHandler := handlers.NewGenerateHandler(orchestrator, queries)
 
 	router := server.NewRouter(recipeHandler, generateHandler, cfg.Server.CORSOrigin)
 
