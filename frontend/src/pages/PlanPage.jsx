@@ -87,22 +87,23 @@ function PlanDetail({ planId }) {
   const [randomizing, setRandomizing] = useState(false);
   const [loadingIngredients, setLoadingIngredients] = useState(true);
 
-  const loadPlan = useCallback(async () => {
-    const data = await getPlan(planId);
-    setPlan(data);
-    setLoading(false);
-  }, [planId]);
-
-  const loadIngredients = useCallback(async () => {
+  const loadIngredients = useCallback(async (signal) => {
     setLoadingIngredients(true);
     try {
-      const data = await getPlanIngredients(planId);
+      const data = await getPlanIngredients(planId, { signal });
       setIngredients(data || []);
-    } catch { /* ignore if plan has no recipes */ }
+    } catch (e) { if (e.name === 'AbortError') return; }
     finally { setLoadingIngredients(false); }
   }, [planId]);
 
-  useEffect(() => { loadPlan(); loadIngredients(); }, [loadPlan, loadIngredients]);
+  useEffect(() => {
+    const ctrl = new AbortController();
+    getPlan(planId, { signal: ctrl.signal })
+      .then(data => { setPlan(data); setLoading(false); })
+      .then(() => loadIngredients(ctrl.signal))
+      .catch(e => { if (e.name !== 'AbortError') throw e; });
+    return () => ctrl.abort();
+  }, [planId, loadIngredients]);
 
   useEffect(() => {
     listRecipes(500, 0).then(data => setRecipes(data.recipes || []));

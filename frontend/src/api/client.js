@@ -48,8 +48,8 @@ export function listPlans() {
   return request('/plans');
 }
 
-export function getPlan(id) {
-  return request(`/plans/${id}`);
+export function getPlan(id, options) {
+  return request(`/plans/${id}`, options);
 }
 
 export function updatePlan(id, data) {
@@ -85,8 +85,15 @@ export function getPlanSuggestions(planId, ingredients) {
   });
 }
 
-export function getPlanIngredients(planId) {
-  return request(`/plans/${planId}/ingredients`);
+export function getPlanIngredients(planId, options) {
+  return request(`/plans/${planId}/ingredients`, options);
+}
+
+export function randomizePlan(planId, servings) {
+  return request(`/plans/${planId}/randomize`, {
+    method: 'POST',
+    body: JSON.stringify({ servings }),
+  });
 }
 
 // Settings
