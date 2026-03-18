@@ -4,7 +4,7 @@ import ReviewPanel from '../components/ReviewPanel';
 import { useGeneration } from '../hooks/useGeneration';
 
 export default function GeneratePage() {
-  const { events, recipes, loading, error, generate, reset } = useGeneration();
+  const { events, recipes, loading, error, generate, reset, removeRecipe } = useGeneration();
 
   const handleGenerate = (endpoint, body) => {
     reset();
@@ -27,7 +27,7 @@ export default function GeneratePage() {
         <div className="generate-right">
           {error && <div className="error-message">{error}</div>}
           <GenerationProgress events={progressEvents} loading={loading} hasRecipes={recipes.length > 0} />
-          <ReviewPanel recipes={recipes} onRefine={handleRefine} loading={loading} />
+          <ReviewPanel recipes={recipes} onRefine={handleRefine} onRemove={removeRecipe} loading={loading} />
         </div>
       </div>
     </div>

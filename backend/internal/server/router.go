@@ -38,6 +38,7 @@ func NewRouter(h *handlers.RecipeHandler, g *handlers.GenerateHandler, mp *handl
 		r.Delete("/plans/{id}", mp.Delete)
 		r.Get("/plans/{id}/ingredients", mp.Ingredients)
 		r.Post("/plans/{id}/suggestions", mp.Suggestions)
+		r.Post("/plans/{id}/randomize", mp.Randomize)
 		r.Post("/plans/{id}/recipes", mp.AddRecipe)
 		r.Delete("/plans/{id}/recipes/{recipeId}", mp.RemoveRecipe)
 		r.Patch("/plans/{id}/recipes/{recipeId}", mp.UpdateRecipe)

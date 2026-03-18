@@ -62,5 +62,9 @@ export function useGeneration() {
     setError(null);
   }, []);
 
-  return { events, recipes, loading, error, generate, reset };
+  const removeRecipe = useCallback((index) => {
+    setRecipes(prev => prev.filter((_, i) => i !== index));
+  }, []);
+
+  return { events, recipes, loading, error, generate, reset, removeRecipe };
 }

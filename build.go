@@ -58,7 +58,7 @@ func build() error {
 
 	// Build backend
 	fmt.Println("Building backend...")
-	goBuild := exec.Command("go", "build", "-buildvcs=false", "-o", "server", "./cmd/server")
+	goBuild := exec.Command("go", "build", "-buildvcs=false", "-o", "server.exe", "./cmd/server")
 	goBuild.Dir = "backend"
 	goBuild.Stdout = os.Stdout
 	goBuild.Stderr = os.Stderr

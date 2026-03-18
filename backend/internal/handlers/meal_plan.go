@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"math"
+	"math/rand/v2"
 	"net/http"
 	"sort"
 	"strconv"
@@ -183,6 +184,26 @@ func (h *MealPlanHandler) Ingredients(w http.ResponseWriter, r *http.Request) {
 		return strings.ToLower(result[i].Name) < strings.ToLower(result[j].Name)
 	})
 
+	// Post-process through LLM to normalize names and consolidate units
+	if h.orchestrator != nil && len(result) > 0 {
+		raw, err := json.Marshal(result)
+		if err == nil {
+			normalized, err := h.orchestrator.NormalizeIngredients(r.Context(), string(raw))
+			if err == nil {
+				// Extract JSON array from response
+				if start := strings.Index(normalized, "["); start >= 0 {
+					if end := strings.LastIndex(normalized, "]"); end > start {
+						normalized = normalized[start : end+1]
+					}
+				}
+				var consolidated []AggregatedIngredient
+				if err := json.Unmarshal([]byte(normalized), &consolidated); err == nil && len(consolidated) > 0 {
+					result = consolidated
+				}
+			}
+		}
+	}
+
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -275,6 +296,138 @@ func (h *MealPlanHandler) AddRecipe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, plan)
+}
+
+func (h *MealPlanHandler) Randomize(w http.ResponseWriter, r *http.Request) {
+	planID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid plan id")
+		return
+	}
+
+	var req models.RandomizeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if len(req.Servings) == 0 {
+		writeError(w, http.StatusBadRequest, "servings array is required (one entry per day)")
+		return
+	}
+	count := len(req.Servings)
+
+	// Fetch all recipes (lightweight) and eaten recipe IDs
+	summaries, err := h.queries.ListRecipeSummaries(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list recipes")
+		return
+	}
+	if len(summaries) == 0 {
+		writeError(w, http.StatusBadRequest, "no recipes in the library to pick from")
+		return
+	}
+
+	eaten, err := h.queries.ListEatenRecipeIDs(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to check eaten recipes")
+		return
+	}
+
+	// Split into new (never eaten) and eaten pools
+	var newPool, eatenPool []database.RecipeSummary
+	for _, s := range summaries {
+		if eaten[s.ID] {
+			eatenPool = append(eatenPool, s)
+		} else {
+			newPool = append(newPool, s)
+		}
+	}
+
+	// Determine targets: ~50/50, adjusting if a pool is too small
+	newTarget := count / 2
+	eatenTarget := count - newTarget
+	if newTarget > len(newPool) {
+		newTarget = len(newPool)
+		eatenTarget = count - newTarget
+	}
+	if eatenTarget > len(eatenPool) {
+		eatenTarget = len(eatenPool)
+		newTarget = count - eatenTarget
+	}
+	// Final clamp in case total library is smaller than count
+	if newTarget > len(newPool) {
+		newTarget = len(newPool)
+	}
+
+	selected := selectDiverse(newPool, newTarget)
+	selected = append(selected, selectDiverse(eatenPool, eatenTarget)...)
+
+	// Shuffle the final selection so new and eaten are interleaved
+	rand.Shuffle(len(selected), func(i, j int) {
+		selected[i], selected[j] = selected[j], selected[i]
+	})
+
+	recipeIDs := make([]int, len(selected))
+	for i, s := range selected {
+		recipeIDs[i] = s.ID
+	}
+
+	if err := h.queries.ReplacePlanRecipes(r.Context(), planID, recipeIDs, req.Servings); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to set plan recipes")
+		return
+	}
+
+	plan, err := h.queries.GetMealPlan(r.Context(), planID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to get updated plan")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, plan)
+}
+
+// selectDiverse picks n recipes from pool, preferring distinct cuisines.
+func selectDiverse(pool []database.RecipeSummary, n int) []database.RecipeSummary {
+	if n <= 0 {
+		return nil
+	}
+	if n >= len(pool) {
+		result := make([]database.RecipeSummary, len(pool))
+		copy(result, pool)
+		rand.Shuffle(len(result), func(i, j int) {
+			result[i], result[j] = result[j], result[i]
+		})
+		return result
+	}
+
+	// Shuffle the pool for randomness
+	shuffled := make([]database.RecipeSummary, len(pool))
+	copy(shuffled, pool)
+	rand.Shuffle(len(shuffled), func(i, j int) {
+		shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+	})
+
+	// Greedily pick recipes, preferring cuisines not yet selected
+	usedCuisines := map[string]int{}
+	var selected []database.RecipeSummary
+
+	for len(selected) < n {
+		bestIdx := -1
+		bestCount := math.MaxInt
+		for i, s := range shuffled {
+			c := usedCuisines[s.CuisineType]
+			if c < bestCount {
+				bestCount = c
+				bestIdx = i
+			}
+		}
+		pick := shuffled[bestIdx]
+		selected = append(selected, pick)
+		usedCuisines[pick.CuisineType]++
+		shuffled = append(shuffled[:bestIdx], shuffled[bestIdx+1:]...)
+	}
+
+	return selected
 }
 
 func (h *MealPlanHandler) RemoveRecipe(w http.ResponseWriter, r *http.Request) {

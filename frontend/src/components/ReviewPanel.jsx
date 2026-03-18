@@ -2,14 +2,12 @@ import { useState, useEffect } from 'react';
 import { saveRecipe } from '../api/client';
 import RecipeCard from './RecipeCard';
 
-export default function ReviewPanel({ recipes, onRefine, loading }) {
+export default function ReviewPanel({ recipes, onRefine, onRemove, loading }) {
   const [saving, setSaving] = useState({});
-  const [saved, setSaved] = useState({});
   const [feedback, setFeedback] = useState({});
 
   useEffect(() => {
     setSaving({});
-    setSaved({});
     setFeedback({});
   }, [recipes]);
 
@@ -17,10 +15,9 @@ export default function ReviewPanel({ recipes, onRefine, loading }) {
     setSaving(prev => ({ ...prev, [index]: true }));
     try {
       await saveRecipe(recipe);
-      setSaved(prev => ({ ...prev, [index]: true }));
+      onRemove(index);
     } catch (err) {
       alert('Failed to save: ' + err.message);
-    } finally {
       setSaving(prev => ({ ...prev, [index]: false }));
     }
   };
@@ -39,15 +36,12 @@ export default function ReviewPanel({ recipes, onRefine, loading }) {
       <h3>Generated Recipes</h3>
       {recipes.map((recipe, i) => (
         <div key={i} className="review-item">
+          <button type="button" className="review-dismiss" onClick={() => onRemove(i)} title="Dismiss">&times;</button>
           <RecipeCard recipe={recipe} showIngredients />
           <div className="review-actions">
-            {saved[i] ? (
-              <span className="saved-badge">Saved!</span>
-            ) : (
-              <button className="btn btn-primary" onClick={() => handleSave(recipe, i)} disabled={saving[i]}>
-                {saving[i] ? 'Saving...' : 'Save Recipe'}
-              </button>
-            )}
+            <button className="btn btn-primary" onClick={() => handleSave(recipe, i)} disabled={saving[i]}>
+              {saving[i] ? 'Saving...' : 'Save Recipe'}
+            </button>
             <div className="refine-section">
               <input
                 type="text"

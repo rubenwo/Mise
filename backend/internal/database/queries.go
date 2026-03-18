@@ -121,6 +121,29 @@ func (q *Queries) ListRecipeTitles(ctx context.Context) ([]string, error) {
 	return titles, rows.Err()
 }
 
+type RecipeSummary struct {
+	ID          int
+	CuisineType string
+}
+
+func (q *Queries) ListRecipeSummaries(ctx context.Context) ([]RecipeSummary, error) {
+	rows, err := q.pool.Query(ctx, "SELECT id, cuisine_type FROM recipes ORDER BY id")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var summaries []RecipeSummary
+	for rows.Next() {
+		var s RecipeSummary
+		if err := rows.Scan(&s.ID, &s.CuisineType); err != nil {
+			return nil, err
+		}
+		summaries = append(summaries, s)
+	}
+	return summaries, rows.Err()
+}
+
 func (q *Queries) ListCuisineCounts(ctx context.Context) (map[string]int, error) {
 	rows, err := q.pool.Query(ctx, "SELECT cuisine_type, COUNT(*) FROM recipes WHERE cuisine_type != '' GROUP BY cuisine_type ORDER BY COUNT(*) DESC")
 	if err != nil {

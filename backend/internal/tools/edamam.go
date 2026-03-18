@@ -41,6 +41,8 @@ func (e *EdamamClient) Search(ctx context.Context, query string) ([]EdamamResult
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
+	req.Header.Add("Edamam-Account-User", "rubenwoldhuis@gmail.com")
+
 	resp, err := e.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("calling edamam: %w", err)

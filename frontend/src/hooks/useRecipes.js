@@ -7,7 +7,7 @@ export function useRecipes() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const load = useCallback(async (limit = 20, offset = 0) => {
+  const load = useCallback(async (limit = 500, offset = 0) => {
     setLoading(true);
     try {
       const data = await listRecipes(limit, offset);

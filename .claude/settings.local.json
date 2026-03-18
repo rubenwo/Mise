@@ -1,0 +1,42 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go version:*)",
+      "Bash(git init:*)",
+      "Bash(go mod:*)",
+      "Bash(go build:*)",
+      "Bash(npm create:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run:*)",
+      "mcp__gopls__go_workspace",
+      "mcp__gopls__go_diagnostics",
+      "Bash(go vet:*)",
+      "Bash(govulncheck ./...)",
+      "Bash(golangci-lint run:*)",
+      "Bash(psql --version)",
+      "Bash(psql -U postgres -c \"SELECT 1\")",
+      "Bash(curl -s http://localhost:11434/api/tags)",
+      "Bash(go run:*)",
+      "Bash(pushd \"//Truenas/nas/Eten/recipes/frontend\")",
+      "Bash(npx vite:*)",
+      "Bash(popd)",
+      "Bash(node:*)",
+      "Bash(git config:*)",
+      "Bash(find TruenasnasEtenrecipes -maxdepth 2 -type f \\\\\\(-name Makefile -o -name Taskfile* -o -name build.sh -o -name go.mod -o -name vite.config.js \\\\\\))",
+      "Bash(ls -la \"\\\\Truenas\\\\nas\\\\Eten\\\\recipes\\\\backend\\\\internal\\\\server\"\" 2>/dev/null || ls -la \"\\\\TruenasnasEtenrecipesbackendinternal\"\")",
+      "mcp__gopls__go_package_api",
+      "Bash(find . -type f -name *.jsx -o -name *.js)",
+      "Read(///Truenas/nas/Eten/recipes/backend/internal/**)",
+      "Read(///Truenas/nas/Eten/recipes/**)",
+      "Read(///Truenas/nas/Eten/**)",
+      "Read(//c//**)",
+      "Bash(\"//Truenas/nas/Eten/recipes/frontend/node_modules/.bin/vite\" build:*)",
+      "Read(///Truenas/nas/Eten/recipes/frontend/node_modules/**)",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__list_console_messages",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__list_pages",
+      "Bash(xargs grep:*)",
+      "Bash(go test:*)",
+      "Bash(find TruenasnasEtenrecipes -name *.sql -o -name schema*)"
+    ]
+  }
+}

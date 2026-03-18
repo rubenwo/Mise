@@ -33,3 +33,7 @@ type UpdatePlanRecipeRequest struct {
 type UpdateMealPlanRequest struct {
 	Status *string `json:"status,omitempty"`
 }
+
+type RandomizeRequest struct {
+	Servings []int `json:"servings"`
+}

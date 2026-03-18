@@ -158,6 +158,53 @@ func (q *Queries) SearchRecipesByIngredients(ctx context.Context, ingredientName
 	return recipes, err
 }
 
+func (q *Queries) ListEatenRecipeIDs(ctx context.Context) (map[int]bool, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT DISTINCT recipe_id FROM meal_plan_recipes mpr
+		JOIN meal_plans mp ON mp.id = mpr.meal_plan_id
+		WHERE mp.status IN ('active', 'completed')`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	eaten := make(map[int]bool)
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		eaten[id] = true
+	}
+	return eaten, rows.Err()
+}
+
+func (q *Queries) ReplacePlanRecipes(ctx context.Context, planID int, recipeIDs []int, servings []int) error {
+	tx, err := q.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, "DELETE FROM meal_plan_recipes WHERE meal_plan_id = $1", planID); err != nil {
+		return err
+	}
+
+	for i, recipeID := range recipeIDs {
+		s := 4
+		if i < len(servings) {
+			s = servings[i]
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO meal_plan_recipes (meal_plan_id, recipe_id, servings, sort_order)
+			VALUES ($1, $2, $3, $4)`, planID, recipeID, s, i+1); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit(ctx)
+}
+
 func (q *Queries) UpdatePlanRecipe(ctx context.Context, planID, recipeID int, servings *int, completed *bool) error {
 	if servings != nil {
 		if _, err := q.pool.Exec(ctx, `
