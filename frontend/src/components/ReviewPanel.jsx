@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { saveRecipe } from '../api/client';
 import RecipeCard from './RecipeCard';
 
@@ -6,6 +6,12 @@ export default function ReviewPanel({ recipes, onRefine, loading }) {
   const [saving, setSaving] = useState({});
   const [saved, setSaved] = useState({});
   const [feedback, setFeedback] = useState({});
+
+  useEffect(() => {
+    setSaving({});
+    setSaved({});
+    setFeedback({});
+  }, [recipes]);
 
   const handleSave = async (recipe, index) => {
     setSaving(prev => ({ ...prev, [index]: true }));
