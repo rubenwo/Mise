@@ -1,0 +1,28 @@
+server:
+  port: 8080
+  cors_origin: "http://localhost:5173"
+
+database:
+  host: localhost
+  port: 5432
+  user: postgres
+  password: ""
+  name: recipes
+  sslmode: disable
+
+ollama:
+  host: "http://localhost:11434"
+  model: "qwen2.5:7b"
+  generation_timeout: 60s
+  max_tool_iterations: 5
+
+search:
+  timeout: 10s
+  cache_ttl: 5m
+
+# Optional: Edamam Recipes API (https://developer.edamam.com/edamam-recipe-api)
+# When app_id and app_key are set, the edamam_search tool is registered with the LLM.
+# When omitted, only web_search and db_search tools are available.
+edamam:
+  app_id: ""
+  app_key: ""
