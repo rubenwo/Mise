@@ -1,4 +1,23 @@
-export default function RecipeDetail({ recipe }) {
+import { useState } from 'react';
+import { fetchRecipeImage } from '../api/client';
+
+export default function RecipeDetail({ recipe: initialRecipe }) {
+  const [recipe, setRecipe] = useState(initialRecipe);
+  const [fetchingImage, setFetchingImage] = useState(false);
+
+  const handleRefreshImage = async () => {
+    setRecipe(r => ({ ...r, image_url: '' }));
+    setFetchingImage(true);
+    try {
+      const result = await fetchRecipeImage(recipe.id);
+      setRecipe(r => ({ ...r, image_url: result.image_url }));
+    } catch (err) {
+      console.error('Image fetch failed:', err);
+    } finally {
+      setFetchingImage(false);
+    }
+  };
+
   return (
     <div className="recipe-detail">
       <div className="recipe-detail-header">
@@ -12,6 +31,17 @@ export default function RecipeDetail({ recipe }) {
           {recipe.difficulty && <span className={`difficulty difficulty-${recipe.difficulty}`}>{recipe.difficulty}</span>}
         </div>
       </div>
+
+      {recipe.image_url && (
+        <img className="recipe-detail-image" src={recipe.image_url} alt={recipe.title} />
+      )}
+      {recipe.id && (
+        <div className="recipe-detail-image-action">
+          <button className="btn btn-secondary btn-sm" onClick={handleRefreshImage} disabled={fetchingImage}>
+            {fetchingImage ? 'Fetching…' : 'Refresh Image'}
+          </button>
+        </div>
+      )}
 
       {recipe.dietary_restrictions && recipe.dietary_restrictions.length > 0 && (
         <div className="recipe-dietary">

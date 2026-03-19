@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -76,6 +77,22 @@ func (h *RecipeHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, recipe)
+
+	// Fetch and store an image in the background so it is ready when the user next views the recipe.
+	if h.imageSearcher != nil {
+		go h.fetchAndStoreImage(context.Background(), recipe.ID, recipe.Title)
+	}
+}
+
+func (h *RecipeHandler) fetchAndStoreImage(ctx context.Context, id int, title string) {
+	imageURL, err := h.imageSearcher.SearchRecipeImage(ctx, title)
+	if err != nil {
+		log.Printf("Auto image fetch for recipe %q: %v", title, err)
+		return
+	}
+	if err := h.queries.SetRecipeImage(ctx, id, imageURL); err != nil {
+		log.Printf("Auto image fetch: failed to save image for recipe %q: %v", title, err)
+	}
 }
 
 func (h *RecipeHandler) Delete(w http.ResponseWriter, r *http.Request) {

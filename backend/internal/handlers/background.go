@@ -10,18 +10,20 @@ import (
 	"github.com/rubenwoldhuis/recipes/internal/database"
 	"github.com/rubenwoldhuis/recipes/internal/llm"
 	"github.com/rubenwoldhuis/recipes/internal/models"
+	"github.com/rubenwoldhuis/recipes/internal/tools"
 )
 
 // BackgroundGenerator periodically generates recipes and saves them to the DB.
 type BackgroundGenerator struct {
-	queries      *database.Queries
-	orchestrator *llm.Orchestrator
-	hub          *llm.Hub
-	stop         chan struct{}
+	queries       *database.Queries
+	orchestrator  *llm.Orchestrator
+	hub           *llm.Hub
+	imageSearcher *tools.ImageSearcher
+	stop          chan struct{}
 }
 
-func NewBackgroundGenerator(q *database.Queries, o *llm.Orchestrator, hub *llm.Hub) *BackgroundGenerator {
-	return &BackgroundGenerator{queries: q, orchestrator: o, hub: hub, stop: make(chan struct{})}
+func NewBackgroundGenerator(q *database.Queries, o *llm.Orchestrator, hub *llm.Hub, imageSearcher *tools.ImageSearcher) *BackgroundGenerator {
+	return &BackgroundGenerator{queries: q, orchestrator: o, hub: hub, imageSearcher: imageSearcher, stop: make(chan struct{})}
 }
 
 // Start launches the background generator loop. It reads its configuration from
@@ -129,7 +131,26 @@ func (b *BackgroundGenerator) runGeneration(ctx context.Context, count, servings
 			continue
 		}
 		log.Printf("Background generation: queued pending recipe %q", recipe.Title)
-		b.hub.Publish(llm.SSEEvent{Type: "pending_added", Data: *recipe})
+
+		// Fetch an image in the background; update the pending recipe and re-broadcast with image.
+		if b.imageSearcher != nil {
+			go func(r *models.Recipe) {
+				imageURL, err := b.imageSearcher.SearchRecipeImage(context.Background(), r.Title)
+				if err != nil {
+					log.Printf("Background generation: image fetch for %q failed: %v", r.Title, err)
+					b.hub.Publish(llm.SSEEvent{Type: "pending_added", Data: *r})
+					return
+				}
+				if err := b.queries.SetPendingRecipeImage(context.Background(), r.ID, imageURL); err != nil {
+					log.Printf("Background generation: failed to save image for %q: %v", r.Title, err)
+				} else {
+					r.ImageURL = imageURL
+				}
+				b.hub.Publish(llm.SSEEvent{Type: "pending_added", Data: *r})
+			}(recipe)
+		} else {
+			b.hub.Publish(llm.SSEEvent{Type: "pending_added", Data: *recipe})
+		}
 		// Update the in-process title list so subsequent recipes in this batch avoid duplicates.
 		titles = append(titles, recipe.Title)
 	}

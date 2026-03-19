@@ -8,6 +8,7 @@ export default function RecipeCard({ recipe: initialRecipe, showLink = false, sh
 
   const handleFetchImage = async (e) => {
     e.preventDefault();
+    setRecipe(r => ({ ...r, image_url: '' }));
     setFetchingImage(true);
     try {
       // Allow callers to override the endpoint (e.g. pending recipes use /api/pending/{id}/fetch-image).
@@ -58,9 +59,9 @@ export default function RecipeCard({ recipe: initialRecipe, showLink = false, sh
       )}
       <div className="recipe-card-actions">
         {showLink && recipe.id && <Link to={`/recipe/${recipe.id}`} className="btn btn-secondary">View</Link>}
-        {recipe.id && !recipe.image_url && (
+        {recipe.id && (
           <button className="btn btn-secondary" onClick={handleFetchImage} disabled={fetchingImage}>
-            {fetchingImage ? 'Fetching...' : 'Fetch Image'}
+            {fetchingImage ? 'Fetching...' : 'Refresh Image'}
           </button>
         )}
         {onDelete && <button className="btn btn-danger" onClick={() => onDelete(recipe.id)}>Delete</button>}

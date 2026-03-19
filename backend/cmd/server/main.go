@@ -117,7 +117,7 @@ func main() {
 	settingsHandler := handlers.NewSettingsHandler(queries, clientPool, genTimeout)
 	pendingHandler := handlers.NewPendingHandler(queries, imageSearcher, hub)
 
-	bgGenerator := handlers.NewBackgroundGenerator(queries, orchestrator, hub)
+	bgGenerator := handlers.NewBackgroundGenerator(queries, orchestrator, hub, imageSearcher)
 	bgGenerator.Start(ctx)
 	log.Println("Background recipe generator started")
 

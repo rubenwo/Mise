@@ -452,6 +452,8 @@ h3 { font-size: 18px; font-weight: 700; margin-bottom: 14px; color: var(--text);
 .recipe-detail-header .difficulty-easy { color: #86efac; }
 .recipe-detail-header .difficulty-medium { color: #fde047; }
 .recipe-detail-header .difficulty-hard { color: #fca5a5; }
+.recipe-detail-image { width: 100%; height: 320px; object-fit: cover; display: block; }
+.recipe-detail-image-action { padding: 8px 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
 
 .recipe-body {
   display: grid;
