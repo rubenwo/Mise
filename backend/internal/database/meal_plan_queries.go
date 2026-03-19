@@ -53,7 +53,7 @@ func (q *Queries) GetMealPlan(ctx context.Context, id int) (*models.MealPlan, er
 		SELECT mpr.id, mpr.recipe_id, mpr.servings, mpr.sort_order, mpr.completed,
 			r.id, r.title, r.description, r.cuisine_type, r.prep_time_minutes, r.cook_time_minutes,
 			r.servings, r.difficulty, r.ingredients, r.instructions, r.dietary_restrictions, r.tags,
-			r.generated_by_model, r.generation_prompt, r.created_at, r.updated_at
+			r.generated_by_model, r.generation_prompt, COALESCE(r.image_url, ''), r.created_at, r.updated_at
 		FROM meal_plan_recipes mpr
 		JOIN recipes r ON r.id = mpr.recipe_id
 		WHERE mpr.meal_plan_id = $1
@@ -73,7 +73,7 @@ func (q *Queries) GetMealPlan(ctx context.Context, id int) (*models.MealPlan, er
 			&mpr.Recipe.Difficulty, &ingredientsJSON, &instructionsJSON,
 			&mpr.Recipe.DietaryRestrictions, &mpr.Recipe.Tags,
 			&mpr.Recipe.GeneratedByModel, &mpr.Recipe.GenerationPrompt,
-			&mpr.Recipe.CreatedAt, &mpr.Recipe.UpdatedAt,
+			&mpr.Recipe.ImageURL, &mpr.Recipe.CreatedAt, &mpr.Recipe.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -203,6 +203,29 @@ func (q *Queries) ReplacePlanRecipes(ctx context.Context, planID int, recipeIDs 
 	}
 
 	return tx.Commit(ctx)
+}
+
+func (q *Queries) GetPlanNormalizedIngredients(ctx context.Context, planID int) ([]byte, error) {
+	var data []byte
+	err := q.pool.QueryRow(ctx,
+		"SELECT normalized_ingredients FROM meal_plans WHERE id = $1", planID,
+	).Scan(&data)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func (q *Queries) SetPlanNormalizedIngredients(ctx context.Context, planID int, data []byte) error {
+	_, err := q.pool.Exec(ctx,
+		"UPDATE meal_plans SET normalized_ingredients = $2 WHERE id = $1", planID, data)
+	return err
+}
+
+func (q *Queries) InvalidatePlanIngredients(ctx context.Context, planID int) error {
+	_, err := q.pool.Exec(ctx,
+		"UPDATE meal_plans SET normalized_ingredients = NULL WHERE id = $1", planID)
+	return err
 }
 
 func (q *Queries) UpdatePlanRecipe(ctx context.Context, planID, recipeID int, servings *int, completed *bool) error {

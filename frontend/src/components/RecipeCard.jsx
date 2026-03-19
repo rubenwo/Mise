@@ -1,8 +1,32 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { fetchRecipeImage } from '../api/client';
 
-export default function RecipeCard({ recipe, showLink = false, showIngredients = false, onDelete }) {
+export default function RecipeCard({ recipe: initialRecipe, showLink = false, showIngredients = false, onDelete, fetchImageEndpoint }) {
+  const [recipe, setRecipe] = useState(initialRecipe);
+  const [fetchingImage, setFetchingImage] = useState(false);
+
+  const handleFetchImage = async (e) => {
+    e.preventDefault();
+    setFetchingImage(true);
+    try {
+      // Allow callers to override the endpoint (e.g. pending recipes use /api/pending/{id}/fetch-image).
+      const result = fetchImageEndpoint
+        ? await fetch(`/api${fetchImageEndpoint}`, { method: 'POST' }).then(r => r.json())
+        : await fetchRecipeImage(recipe.id);
+      setRecipe(r => ({ ...r, image_url: result.image_url }));
+    } catch (err) {
+      console.error('Image fetch failed:', err);
+    } finally {
+      setFetchingImage(false);
+    }
+  };
+
   return (
     <div className="recipe-card">
+      {recipe.image_url && (
+        <img className="recipe-card-image" src={recipe.image_url} alt={recipe.title} loading="lazy" />
+      )}
       <div className="recipe-card-header">
         <h3>{recipe.title}</h3>
         {recipe.cuisine_type && <span className="cuisine-badge">{recipe.cuisine_type}</span>}
@@ -34,6 +58,11 @@ export default function RecipeCard({ recipe, showLink = false, showIngredients =
       )}
       <div className="recipe-card-actions">
         {showLink && recipe.id && <Link to={`/recipe/${recipe.id}`} className="btn btn-secondary">View</Link>}
+        {recipe.id && !recipe.image_url && (
+          <button className="btn btn-secondary" onClick={handleFetchImage} disabled={fetchingImage}>
+            {fetchingImage ? 'Fetching...' : 'Fetch Image'}
+          </button>
+        )}
         {onDelete && <button className="btn btn-danger" onClick={() => onDelete(recipe.id)}>Delete</button>}
       </div>
     </div>

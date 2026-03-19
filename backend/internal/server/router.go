@@ -7,7 +7,7 @@ import (
 	"github.com/rubenwoldhuis/recipes/internal/handlers"
 )
 
-func NewRouter(h *handlers.RecipeHandler, g *handlers.GenerateHandler, mp *handlers.MealPlanHandler, s *handlers.SettingsHandler, corsOrigin string) *chi.Mux {
+func NewRouter(h *handlers.RecipeHandler, g *handlers.GenerateHandler, mp *handlers.MealPlanHandler, s *handlers.SettingsHandler, p *handlers.PendingHandler, corsOrigin string) *chi.Mux {
 	r := chi.NewRouter()
 
 	r.Use(LoggingMiddleware)
@@ -25,6 +25,7 @@ func NewRouter(h *handlers.RecipeHandler, g *handlers.GenerateHandler, mp *handl
 		r.Post("/recipes/search", h.Search)
 		r.Get("/recipes/{id}", h.Get)
 		r.Delete("/recipes/{id}", h.Delete)
+		r.Post("/recipes/{id}/fetch-image", h.FetchImage)
 
 		r.Post("/generate/single", g.Single)
 		r.Post("/generate/batch", g.Batch)
@@ -42,6 +43,12 @@ func NewRouter(h *handlers.RecipeHandler, g *handlers.GenerateHandler, mp *handl
 		r.Post("/plans/{id}/recipes", mp.AddRecipe)
 		r.Delete("/plans/{id}/recipes/{recipeId}", mp.RemoveRecipe)
 		r.Patch("/plans/{id}/recipes/{recipeId}", mp.UpdateRecipe)
+
+		r.Get("/pending", p.List)
+		r.Get("/pending/events", p.Stream)
+		r.Post("/pending/{id}/approve", p.Approve)
+		r.Post("/pending/{id}/fetch-image", p.FetchImage)
+		r.Delete("/pending/{id}", p.Reject)
 
 		r.Get("/settings/models", s.ListModels)
 		r.Get("/settings/providers", s.ListProviders)

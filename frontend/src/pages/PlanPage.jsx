@@ -9,6 +9,79 @@ import {
 import RecipeCard from '../components/RecipeCard';
 import { filterRecipes } from '../utils/fuzzyMatch';
 
+function BrowseRecipeCard({ recipe, servings, onServingsChange, onAdd, adding }) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="plan-browse-item plan-browse-card">
+      <div className="plan-browse-card-main">
+        {recipe.image_url && (
+          <img className="plan-browse-thumb" src={recipe.image_url} alt={recipe.title} loading="lazy" />
+        )}
+        <div className="plan-browse-info">
+          <div className="plan-browse-title-row">
+            <strong>{recipe.title}</strong>
+            {recipe.cuisine_type && <span className="cuisine-badge">{recipe.cuisine_type}</span>}
+          </div>
+          {recipe.description && (
+            <p className="plan-browse-description">
+              {recipe.description.length > 120 ? recipe.description.slice(0, 120) + '…' : recipe.description}
+            </p>
+          )}
+          <div className="plan-browse-meta-row">
+            {recipe.prep_time_minutes > 0 && <span>Prep {recipe.prep_time_minutes}m</span>}
+            {recipe.cook_time_minutes > 0 && <span>Cook {recipe.cook_time_minutes}m</span>}
+            {recipe.difficulty && <span className={`difficulty difficulty-${recipe.difficulty}`}>{recipe.difficulty}</span>}
+            <button
+              className="btn-link"
+              onClick={() => setExpanded(e => !e)}
+              aria-expanded={expanded}
+            >
+              {expanded ? 'Hide details' : 'Show details'}
+            </button>
+          </div>
+        </div>
+        <div className="plan-browse-actions">
+          <input
+            type="number"
+            min="1"
+            max="20"
+            value={servings}
+            onChange={e => onServingsChange(parseInt(e.target.value) || 1)}
+            className="servings-input"
+            aria-label="Servings"
+          />
+          <button className="btn btn-primary" onClick={onAdd} disabled={adding}>
+            {adding ? 'Adding…' : 'Add'}
+          </button>
+        </div>
+      </div>
+      {expanded && (
+        <div className="plan-browse-expanded">
+          {recipe.ingredients && recipe.ingredients.length > 0 && (
+            <div className="plan-browse-ingredients">
+              <h5>Ingredients</h5>
+              <ul>
+                {recipe.ingredients.map((ing, i) => (
+                  <li key={i}><strong>{ing.amount} {ing.unit}</strong> {ing.name}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {recipe.instructions && recipe.instructions.length > 0 && (
+            <div className="plan-browse-instructions">
+              <h5>Instructions</h5>
+              <ol>
+                {recipe.instructions.map((step, i) => <li key={i}>{step}</li>)}
+              </ol>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function PlanPage() {
   const { id } = useParams();
 
@@ -281,30 +354,14 @@ function PlanDetail({ planId }) {
             </div>
             <div className="plan-recipe-browser">
               {filterRecipes(recipeFilter, recipes).filter(r => !planRecipeIds.has(r.id)).map(recipe => (
-                <div key={recipe.id} className="plan-browse-item">
-                  <div className="plan-browse-info">
-                    <strong>{recipe.title}</strong>
-                    {recipe.cuisine_type && <span className="cuisine-badge">{recipe.cuisine_type}</span>}
-                    <span className="plan-browse-meta">{recipe.servings} servings</span>
-                  </div>
-                  <div className="plan-browse-actions">
-                    <input
-                      type="number"
-                      min="1"
-                      max="20"
-                      value={servingsInput[recipe.id] || recipe.servings}
-                      onChange={e => setServingsInput(prev => ({ ...prev, [recipe.id]: parseInt(e.target.value) || 1 }))}
-                      className="servings-input"
-                    />
-                    <button
-                      className="btn btn-primary"
-                      onClick={() => handleAdd(recipe.id)}
-                      disabled={adding[recipe.id]}
-                    >
-                      {adding[recipe.id] ? 'Adding...' : 'Add'}
-                    </button>
-                  </div>
-                </div>
+                <BrowseRecipeCard
+                  key={recipe.id}
+                  recipe={recipe}
+                  servings={servingsInput[recipe.id] || recipe.servings}
+                  onServingsChange={v => setServingsInput(prev => ({ ...prev, [recipe.id]: v }))}
+                  onAdd={() => handleAdd(recipe.id)}
+                  adding={!!adding[recipe.id]}
+                />
               ))}
               {filterRecipes(recipeFilter, recipes).filter(r => !planRecipeIds.has(r.id)).length === 0 && (
                 <p className="empty-state">{recipeFilter ? 'No recipes match your filter.' : 'All recipes are already in this plan.'}</p>

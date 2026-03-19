@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"time"
@@ -40,8 +41,9 @@ func (e *EdamamClient) Search(ctx context.Context, query string) ([]EdamamResult
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
-
-	req.Header.Add("Edamam-Account-User", "rubenwoldhuis@gmail.com")
+	// Edamam Recipe Search API v2 requires Accept and Edamam-Account-User headers.
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Edamam-Account-User", e.appID)
 
 	resp, err := e.client.Do(req)
 	if err != nil {
@@ -50,7 +52,8 @@ func (e *EdamamClient) Search(ctx context.Context, query string) ([]EdamamResult
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("edamam returned status %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("edamam returned status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var apiResp struct {

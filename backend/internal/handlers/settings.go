@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -28,6 +29,7 @@ func NewSettingsHandler(q *database.Queries, pool *llm.ClientPool, timeout time.
 func (h *SettingsHandler) ListProviders(w http.ResponseWriter, r *http.Request) {
 	providers, err := h.queries.ListOllamaProviders(r.Context())
 	if err != nil {
+		log.Panicln(err)
 		writeError(w, http.StatusInternalServerError, "failed to list providers")
 		return
 	}
@@ -190,7 +192,7 @@ func (h *SettingsHandler) reloadPool(r *http.Request) {
 	}
 	configs := make([]llm.ProviderConfig, len(providers))
 	for i, p := range providers {
-		configs[i] = llm.ProviderConfig{Host: p.Host, Model: p.Model, Timeout: h.timeout}
+		configs[i] = llm.ProviderConfig{Host: p.Host, Model: p.Model, Timeout: h.timeout, ProviderID: p.ID, Tags: p.Tags}
 	}
 	h.pool.Reload(configs)
 }

@@ -76,13 +76,19 @@ func main() {
 	provConfigs := make([]llm.ProviderConfig, len(providers))
 	for i, p := range providers {
 		provConfigs[i] = llm.ProviderConfig{
-			Host:    p.Host,
-			Model:   p.Model,
-			Timeout: genTimeout,
+			Host:       p.Host,
+			Model:      p.Model,
+			Timeout:    genTimeout,
+			ProviderID: p.ID,
+			Tags:       p.Tags,
 		}
 	}
 	clientPool := llm.NewClientPool(provConfigs)
 	log.Printf("Loaded %d Ollama provider(s)", len(providers))
+
+	// Start background health checker (30 second interval)
+	clientPool.StartHealthChecker(ctx, 30*time.Second, queries)
+	log.Println("Health checker started")
 
 	// Ensure models on all providers
 	for _, c := range clientPool.Clients() {
@@ -102,12 +108,20 @@ func main() {
 	executor := tools.NewExecutor(webSearcher, dbSearcher, edamamClient)
 	orchestrator := llm.NewOrchestrator(clientPool, executor, cfg.Ollama.MaxToolIterations, cfg.Edamam.Enabled())
 
-	recipeHandler := handlers.NewRecipeHandler(queries)
+	hub := llm.NewHub()
+
+	imageSearcher := tools.NewImageSearcher(cfg.Search.Timeout)
+	recipeHandler := handlers.NewRecipeHandler(queries, imageSearcher)
 	generateHandler := handlers.NewGenerateHandler(orchestrator, queries)
 	mealPlanHandler := handlers.NewMealPlanHandler(queries, orchestrator)
 	settingsHandler := handlers.NewSettingsHandler(queries, clientPool, genTimeout)
+	pendingHandler := handlers.NewPendingHandler(queries, imageSearcher, hub)
 
-	router := server.NewRouter(recipeHandler, generateHandler, mealPlanHandler, settingsHandler, cfg.Server.CORSOrigin)
+	bgGenerator := handlers.NewBackgroundGenerator(queries, orchestrator, hub)
+	bgGenerator.Start(ctx)
+	log.Println("Background recipe generator started")
+
+	router := server.NewRouter(recipeHandler, generateHandler, mealPlanHandler, settingsHandler, pendingHandler, cfg.Server.CORSOrigin)
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.Server.Port),

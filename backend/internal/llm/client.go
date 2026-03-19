@@ -8,23 +8,42 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"sync/atomic"
 	"time"
 )
 
 type Client struct {
-	baseURL    string
-	model      string
-	httpClient *http.Client
+	baseURL      string
+	model        string
+	httpClient   *http.Client
+	healthy      atomic.Bool
+	lastCheck    time.Time
+	providerID   int
+	tags         []string
 }
 
-func NewClient(baseURL, model string, timeout time.Duration) *Client {
-	return &Client{
+func NewClient(baseURL, model string, timeout time.Duration, providerID int, tags []string) *Client {
+	c := &Client{
 		baseURL: baseURL,
 		model:   model,
 		httpClient: &http.Client{
 			Timeout: timeout,
 		},
+		providerID: providerID,
+		tags:       tags,
 	}
+	c.healthy.Store(true)
+	c.lastCheck = time.Now()
+	return c
+}
+
+func (c *Client) hasTag(tag string) bool {
+	for _, t := range c.tags {
+		if t == tag {
+			return true
+		}
+	}
+	return false
 }
 
 type Message struct {
@@ -151,4 +170,13 @@ func (c *Client) pullModel(ctx context.Context) error {
 
 func (c *Client) Model() string {
 	return c.model
+}
+
+func (c *Client) IsHealthy(ctx context.Context) bool {
+	resp, err := http.Get(c.baseURL + "/api/tags")
+	if err != nil {
+		return false
+	}
+	defer func() { _ = resp.Body.Close() }()
+	return resp.StatusCode == http.StatusOK
 }

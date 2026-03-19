@@ -141,6 +141,14 @@ func (h *MealPlanHandler) Ingredients(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Return cached normalized ingredients if available.
+	if cached, err := h.queries.GetPlanNormalizedIngredients(r.Context(), id); err == nil && len(cached) > 0 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(cached)
+		return
+	}
+
 	plan, err := h.queries.GetMealPlan(r.Context(), id)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -161,7 +169,9 @@ func (h *MealPlanHandler) Ingredients(w http.ResponseWriter, r *http.Request) {
 			scale = float64(mpr.Servings) / float64(mpr.Recipe.Servings)
 		}
 		for _, ing := range mpr.Recipe.Ingredients {
-			k := key{strings.ToLower(ing.Name), strings.ToLower(ing.Unit)}
+			// Strip common trailing modifiers before keying to improve pre-LLM dedup.
+			normalizedName := normalizeIngredientName(ing.Name)
+			k := key{normalizedName, strings.ToLower(ing.Unit)}
 			if agg[k] == nil {
 				agg[k] = &AggregatedIngredient{Name: ing.Name, Unit: ing.Unit}
 				recipeNames[k] = map[string]bool{}
@@ -184,13 +194,12 @@ func (h *MealPlanHandler) Ingredients(w http.ResponseWriter, r *http.Request) {
 		return strings.ToLower(result[i].Name) < strings.ToLower(result[j].Name)
 	})
 
-	// Post-process through LLM to normalize names and consolidate units
+	// Post-process through LLM to normalize names and consolidate units, then cache.
 	if h.orchestrator != nil && len(result) > 0 {
 		raw, err := json.Marshal(result)
 		if err == nil {
 			normalized, err := h.orchestrator.NormalizeIngredients(r.Context(), string(raw))
 			if err == nil {
-				// Extract JSON array from response
 				if start := strings.Index(normalized, "["); start >= 0 {
 					if end := strings.LastIndex(normalized, "]"); end > start {
 						normalized = normalized[start : end+1]
@@ -199,12 +208,30 @@ func (h *MealPlanHandler) Ingredients(w http.ResponseWriter, r *http.Request) {
 				var consolidated []AggregatedIngredient
 				if err := json.Unmarshal([]byte(normalized), &consolidated); err == nil && len(consolidated) > 0 {
 					result = consolidated
+					// Cache the result so subsequent calls skip the LLM entirely.
+					if cacheJSON, err := json.Marshal(result); err == nil {
+						_ = h.queries.SetPlanNormalizedIngredients(r.Context(), id, cacheJSON)
+					}
 				}
 			}
 		}
 	}
 
 	writeJSON(w, http.StatusOK, result)
+}
+
+// normalizeIngredientName strips common trailing modifiers so ingredients like
+// "butter" and "butter, softened" key together before LLM normalization.
+func normalizeIngredientName(name string) string {
+	name = strings.ToLower(name)
+	// Strip everything after a comma or "for".
+	if idx := strings.Index(name, ","); idx >= 0 {
+		name = strings.TrimSpace(name[:idx])
+	}
+	for _, suffix := range []string{" for serving", " for garnish", " for coating", " to taste", " to serve"} {
+		name = strings.TrimSuffix(name, suffix)
+	}
+	return strings.TrimSpace(name)
 }
 
 func (h *MealPlanHandler) Delete(w http.ResponseWriter, r *http.Request) {
@@ -288,6 +315,7 @@ func (h *MealPlanHandler) AddRecipe(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to add recipe to plan")
 		return
 	}
+	_ = h.queries.InvalidatePlanIngredients(r.Context(), planID)
 
 	plan, err := h.queries.GetMealPlan(r.Context(), planID)
 	if err != nil {
@@ -376,6 +404,7 @@ func (h *MealPlanHandler) Randomize(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to set plan recipes")
 		return
 	}
+	_ = h.queries.InvalidatePlanIngredients(r.Context(), planID)
 
 	plan, err := h.queries.GetMealPlan(r.Context(), planID)
 	if err != nil {
@@ -450,6 +479,7 @@ func (h *MealPlanHandler) RemoveRecipe(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to remove recipe")
 		return
 	}
+	_ = h.queries.InvalidatePlanIngredients(r.Context(), planID)
 
 	plan, err := h.queries.GetMealPlan(r.Context(), planID)
 	if err != nil {
@@ -481,6 +511,10 @@ func (h *MealPlanHandler) UpdateRecipe(w http.ResponseWriter, r *http.Request) {
 	if err := h.queries.UpdatePlanRecipe(r.Context(), planID, recipeID, req.Servings, req.Completed); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to update recipe in plan")
 		return
+	}
+	// Invalidate ingredient cache when servings change (not for completed toggle).
+	if req.Servings != nil {
+		_ = h.queries.InvalidatePlanIngredients(r.Context(), planID)
 	}
 
 	plan, err := h.queries.GetMealPlan(r.Context(), planID)

@@ -1,21 +1,29 @@
 package llm
 
 import (
+	"context"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rubenwoldhuis/recipes/internal/database"
 )
 
+
 type ProviderConfig struct {
-	Host    string
-	Model   string
-	Timeout time.Duration
+	Host       string
+	Model      string
+	Timeout    time.Duration
+	ProviderID int
+	Tags       []string
 }
 
 type ClientPool struct {
-	mu      sync.Mutex
-	clients []*Client
-	next    int
+	mu             sync.Mutex
+	clients        []*Client
+	next           int
+	healthCheck    time.Duration
+	stopHealthChan chan struct{}
 }
 
 func NewClientPool(providers []ProviderConfig) *ClientPool {
@@ -27,7 +35,7 @@ func NewClientPool(providers []ProviderConfig) *ClientPool {
 func (p *ClientPool) buildClients(providers []ProviderConfig) {
 	clients := make([]*Client, 0, len(providers))
 	for _, prov := range providers {
-		clients = append(clients, NewClient(prov.Host, prov.Model, prov.Timeout))
+		clients = append(clients, NewClient(prov.Host, prov.Model, prov.Timeout, prov.ProviderID, prov.Tags))
 	}
 	p.clients = clients
 	p.next = 0
@@ -40,14 +48,41 @@ func (p *ClientPool) Reload(providers []ProviderConfig) {
 }
 
 func (p *ClientPool) Acquire() *Client {
+	return p.AcquireWithTag("")
+}
+
+func (p *ClientPool) AcquireWithTag(tag string) *Client {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if len(p.clients) == 0 {
 		return nil
 	}
-	c := p.clients[p.next%len(p.clients)]
-	p.next++
-	return c
+
+	// First pass: prefer clients with the requested tag (if any).
+	if tag != "" {
+		startIdx := p.next
+		for i := 0; i < len(p.clients); i++ {
+			idx := (startIdx + i) % len(p.clients)
+			c := p.clients[idx]
+			if c.healthy.Load() && c.hasTag(tag) {
+				p.next = idx + 1
+				return c
+			}
+		}
+	}
+
+	// Second pass (or no tag): any healthy client in round-robin order.
+	startIdx := p.next
+	for i := 0; i < len(p.clients); i++ {
+		idx := (startIdx + i) % len(p.clients)
+		c := p.clients[idx]
+		if c.healthy.Load() {
+			p.next = idx + 1
+			return c
+		}
+	}
+
+	return nil
 }
 
 func (p *ClientPool) Model() string {
@@ -72,4 +107,57 @@ func (p *ClientPool) Clients() []*Client {
 	out := make([]*Client, len(p.clients))
 	copy(out, p.clients)
 	return out
+}
+
+func (p *ClientPool) StartHealthChecker(ctx context.Context, interval time.Duration, db *database.Queries) {
+	p.healthCheck = interval
+	p.stopHealthChan = make(chan struct{})
+
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				p.checkHealth(ctx, db)
+			case <-p.stopHealthChan:
+				return
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+}
+
+func (p *ClientPool) StopHealthChecker() {
+	if p.stopHealthChan != nil {
+		close(p.stopHealthChan)
+	}
+}
+
+func (p *ClientPool) checkHealth(ctx context.Context, db *database.Queries) {
+	p.mu.Lock()
+	clients := make([]*Client, len(p.clients))
+	copy(clients, p.clients)
+	p.mu.Unlock()
+
+	for _, c := range clients {
+		healthy := c.IsHealthy(ctx)
+		c.lastCheck = time.Now()
+		c.healthy.Store(healthy)
+
+		var lastError *string
+		if !healthy {
+			err := "health check failed"
+			lastError = &err
+		}
+
+		status := "healthy"
+		if !healthy {
+			status = "unhealthy"
+		}
+
+		_ = db.UpdateProviderHealthStatus(ctx, c.providerID, status, lastError)
+	}
 }

@@ -134,6 +134,23 @@ export function updateSettings(settings) {
   });
 }
 
+// Pending recipes (background-generated, awaiting user review)
+export function listPendingRecipes() {
+  return request('/pending');
+}
+
+export function approvePendingRecipe(id) {
+  return request(`/pending/${id}/approve`, { method: 'POST' });
+}
+
+export function rejectPendingRecipe(id) {
+  return request(`/pending/${id}`, { method: 'DELETE' });
+}
+
+export function fetchRecipeImage(id) {
+  return request(`/recipes/${id}/fetch-image`, { method: 'POST' });
+}
+
 export function generateStream(endpoint, body) {
   return fetch(`${API_BASE}/generate/${endpoint}`, {
     method: 'POST',

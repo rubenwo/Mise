@@ -131,6 +131,35 @@ func SystemPrompt() string {
 	return systemPrompt
 }
 
+// BuildBackgroundGeneratePrompt creates a prompt for unattended background recipe generation.
+// It emphasises diversity and avoids existing titles like BuildGeneratePrompt, but without
+// any user-specific constraints.
+func BuildBackgroundGeneratePrompt(existingTitles []string, cuisineCounts map[string]int, index, total, servings int) string {
+	prompt := fmt.Sprintf(
+		"Generate a dinner recipe for exactly %d servings. "+
+			"The `servings` field in your JSON MUST be %d and all ingredient amounts MUST be scaled accordingly.",
+		servings, servings,
+	)
+
+	if len(cuisineCounts) > 0 {
+		var dist []string
+		for cuisine, count := range cuisineCounts {
+			dist = append(dist, fmt.Sprintf("%s (%d)", cuisine, count))
+		}
+		prompt += "\n\nThe recipe collection currently has: " + strings.Join(dist, ", ") + ". Choose an underrepresented cuisine to keep the collection balanced."
+	}
+
+	if len(existingTitles) > 0 {
+		prompt += "\n\nDo NOT duplicate any of these existing recipes: " + strings.Join(existingTitles, ", ") + "."
+	}
+
+	if total > 1 {
+		prompt += fmt.Sprintf("\n\n(Recipe %d of %d in this background batch — make it unique from others in this batch.)", index, total)
+	}
+
+	return prompt
+}
+
 const reviewSystemPrompt = `You are a recipe reviewer. Check the recipe and return ONLY a JSON object with corrections. Be concise.
 
 Checks:

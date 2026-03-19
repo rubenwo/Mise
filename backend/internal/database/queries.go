@@ -40,6 +40,11 @@ func (q *Queries) CreateRecipe(ctx context.Context, r *models.Recipe) error {
 	).Scan(&r.ID, &r.CreatedAt, &r.UpdatedAt)
 }
 
+func (q *Queries) SetRecipeImage(ctx context.Context, id int, imageURL string) error {
+	_, err := q.pool.Exec(ctx, "UPDATE recipes SET image_url = $2 WHERE id = $1", id, imageURL)
+	return err
+}
+
 func (q *Queries) GetRecipe(ctx context.Context, id int) (*models.Recipe, error) {
 	r := &models.Recipe{}
 	var ingredientsJSON, instructionsJSON []byte
@@ -47,13 +52,13 @@ func (q *Queries) GetRecipe(ctx context.Context, id int) (*models.Recipe, error)
 	err := q.pool.QueryRow(ctx, `
 		SELECT id, title, description, cuisine_type, prep_time_minutes, cook_time_minutes,
 			servings, difficulty, ingredients, instructions, dietary_restrictions, tags,
-			generated_by_model, generation_prompt, created_at, updated_at
+			generated_by_model, generation_prompt, COALESCE(image_url, ''), created_at, updated_at
 		FROM recipes WHERE id = $1`, id,
 	).Scan(
 		&r.ID, &r.Title, &r.Description, &r.CuisineType, &r.PrepTimeMinutes, &r.CookTimeMinutes,
 		&r.Servings, &r.Difficulty, &ingredientsJSON, &instructionsJSON,
 		&r.DietaryRestrictions, &r.Tags, &r.GeneratedByModel, &r.GenerationPrompt,
-		&r.CreatedAt, &r.UpdatedAt,
+		&r.ImageURL, &r.CreatedAt, &r.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -82,7 +87,7 @@ func (q *Queries) ListRecipes(ctx context.Context, limit, offset int) ([]models.
 	rows, err := q.pool.Query(ctx, `
 		SELECT id, title, description, cuisine_type, prep_time_minutes, cook_time_minutes,
 			servings, difficulty, ingredients, instructions, dietary_restrictions, tags,
-			generated_by_model, generation_prompt, created_at, updated_at
+			generated_by_model, generation_prompt, COALESCE(image_url, ''), created_at, updated_at
 		FROM recipes ORDER BY created_at DESC LIMIT $1 OFFSET $2`, limit, offset)
 	if err != nil {
 		return nil, 0, err
@@ -104,7 +109,8 @@ func (q *Queries) DeleteRecipe(ctx context.Context, id int) error {
 }
 
 func (q *Queries) ListRecipeTitles(ctx context.Context) ([]string, error) {
-	rows, err := q.pool.Query(ctx, "SELECT title FROM recipes ORDER BY created_at DESC")
+	// Limit to 40 most recent titles to keep generation prompts concise.
+	rows, err := q.pool.Query(ctx, "SELECT title FROM recipes ORDER BY created_at DESC LIMIT 40")
 	if err != nil {
 		return nil, err
 	}
@@ -203,7 +209,7 @@ func (q *Queries) SearchRecipes(ctx context.Context, req models.SearchRequest) (
 	query := fmt.Sprintf(`
 		SELECT id, title, description, cuisine_type, prep_time_minutes, cook_time_minutes,
 			servings, difficulty, ingredients, instructions, dietary_restrictions, tags,
-			generated_by_model, generation_prompt, created_at, updated_at
+			generated_by_model, generation_prompt, COALESCE(image_url, ''), created_at, updated_at
 		FROM recipes %s ORDER BY created_at DESC LIMIT $%d OFFSET $%d`, where, argIdx, argIdx+1)
 	args = append(args, req.Limit, req.Offset)
 
@@ -233,7 +239,7 @@ func scanRecipes(rows pgx.Rows, total int) ([]models.Recipe, int, error) {
 			&r.ID, &r.Title, &r.Description, &r.CuisineType, &r.PrepTimeMinutes, &r.CookTimeMinutes,
 			&r.Servings, &r.Difficulty, &ingredientsJSON, &instructionsJSON,
 			&r.DietaryRestrictions, &r.Tags, &r.GeneratedByModel, &r.GenerationPrompt,
-			&r.CreatedAt, &r.UpdatedAt,
+			&r.ImageURL, &r.CreatedAt, &r.UpdatedAt,
 		); err != nil {
 			return nil, 0, err
 		}

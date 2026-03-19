@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -9,14 +10,16 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/rubenwoldhuis/recipes/internal/database"
 	"github.com/rubenwoldhuis/recipes/internal/models"
+	"github.com/rubenwoldhuis/recipes/internal/tools"
 )
 
 type RecipeHandler struct {
-	queries *database.Queries
+	queries       *database.Queries
+	imageSearcher *tools.ImageSearcher
 }
 
-func NewRecipeHandler(q *database.Queries) *RecipeHandler {
-	return &RecipeHandler{queries: q}
+func NewRecipeHandler(q *database.Queries, imageSearcher *tools.ImageSearcher) *RecipeHandler {
+	return &RecipeHandler{queries: q, imageSearcher: imageSearcher}
 }
 
 func (h *RecipeHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -111,6 +114,43 @@ func (h *RecipeHandler) Search(w http.ResponseWriter, r *http.Request) {
 		"recipes": recipes,
 		"total":   total,
 	})
+}
+
+func (h *RecipeHandler) FetchImage(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	recipe, err := h.queries.GetRecipe(r.Context(), id)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			writeError(w, http.StatusNotFound, "recipe not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to get recipe")
+		return
+	}
+
+	if h.imageSearcher == nil {
+		writeError(w, http.StatusServiceUnavailable, "image search not available")
+		return
+	}
+
+	imageURL, err := h.imageSearcher.SearchRecipeImage(r.Context(), recipe.Title)
+	if err != nil {
+		log.Printf("Image search for %q failed: %v", recipe.Title, err)
+		writeError(w, http.StatusBadGateway, "could not find an image: "+err.Error())
+		return
+	}
+
+	if err := h.queries.SetRecipeImage(r.Context(), id, imageURL); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to save image url")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"image_url": imageURL})
 }
 
 func writeJSON(w http.ResponseWriter, status int, data any) {

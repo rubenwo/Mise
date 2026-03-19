@@ -26,6 +26,7 @@ type Recipe struct {
 	Tags                []string     `json:"tags"`
 	GeneratedByModel    string       `json:"generated_by_model"`
 	GenerationPrompt    string       `json:"generation_prompt"`
+	ImageURL            string       `json:"image_url,omitempty"`
 	CreatedAt           time.Time    `json:"created_at"`
 	UpdatedAt           time.Time    `json:"updated_at"`
 }

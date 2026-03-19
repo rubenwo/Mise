@@ -10,6 +10,75 @@ export default function SettingsPage() {
       <h2>Settings</h2>
       <ProvidersSection />
       <GeneralSettings />
+      <BackgroundGenerationSettings />
+    </div>
+  );
+}
+
+const KNOWN_TAGS = ['background', 'review'];
+
+function TagPicker({ tags = [], onChange }) {
+  const [selected, setSelected] = useState('');
+  const [custom, setCustom] = useState('');
+
+  const add = () => {
+    const value = selected === '__custom__' ? custom.trim() : selected;
+    if (!value || tags.includes(value)) return;
+    onChange([...tags, value]);
+    setSelected('');
+    setCustom('');
+  };
+
+  const remove = (tag) => onChange(tags.filter(t => t !== tag));
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); add(); }
+  };
+
+  const availableKnown = KNOWN_TAGS.filter(t => !tags.includes(t));
+
+  return (
+    <div className="tag-picker">
+      {tags.length > 0 && (
+        <div className="tag-picker-chips">
+          {tags.map(t => (
+            <span key={t} className="tag tag-chip">
+              {t}
+              <button type="button" className="tag-chip-remove" onClick={() => remove(t)} aria-label={`Remove ${t}`}>
+                &times;
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="tag-picker-input-row">
+        <select
+          value={selected}
+          onChange={e => { setSelected(e.target.value); setCustom(''); }}
+        >
+          <option value="">Add tag…</option>
+          {availableKnown.map(t => <option key={t} value={t}>{t}</option>)}
+          <option value="__custom__">Custom…</option>
+        </select>
+        {selected === '__custom__' && (
+          <input
+            type="text"
+            value={custom}
+            onChange={e => setCustom(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Tag name"
+            autoFocus
+          />
+        )}
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={add}
+          disabled={!selected || (selected === '__custom__' && !custom.trim())}
+        >
+          Add
+        </button>
+      </div>
     </div>
   );
 }
@@ -44,7 +113,7 @@ function ModelInput({ host, value, onChange, id }) {
 function ProvidersSection() {
   const [providers, setProviders] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState({ name: '', host: '', model: '' });
+  const [form, setForm] = useState({ name: '', host: '', model: '', tags: [] });
   const [editing, setEditing] = useState(null);
 
   useEffect(() => {
@@ -60,7 +129,7 @@ function ProvidersSection() {
     e.preventDefault();
     if (!form.name || !form.host || !form.model) return;
     await createProvider({ ...form, enabled: true });
-    setForm({ name: '', host: '', model: '' });
+    setForm({ name: '', host: '', model: '', tags: [] });
     reload();
   };
 
@@ -111,6 +180,10 @@ function ProvidersSection() {
                   onChange={e => setEditing({ ...editing, model: e.target.value })}
                   id={`edit-models-${editing.id}`}
                 />
+                <TagPicker
+                  tags={editing.tags || []}
+                  onChange={tags => setEditing({ ...editing, tags })}
+                />
                 <div className="provider-edit-actions">
                   <button className="btn btn-primary" onClick={handleEditSave}>Save</button>
                   <button className="btn btn-secondary" onClick={() => setEditing(null)}>Cancel</button>
@@ -122,6 +195,12 @@ function ProvidersSection() {
                   <strong>{p.name}</strong>
                   <span className="provider-host">{p.host}</span>
                   <span className="provider-model">{p.model}</span>
+                  {p.tags && p.tags.length > 0 && (
+                    <span className="provider-tags">
+                      {p.tags.map(t => <span key={t} className="tag">{t}</span>)}
+                    </span>
+                  )}
+                  <span className={`health-badge health-${p.health_status}`}>{p.health_status}</span>
                 </div>
                 <div className="provider-actions">
                   <button
@@ -161,6 +240,10 @@ function ProvidersSection() {
             onChange={e => setForm({ ...form, model: e.target.value })}
             id="add-models"
           />
+          <TagPicker
+            tags={form.tags}
+            onChange={tags => setForm(f => ({ ...f, tags }))}
+          />
         </div>
         <button
           className="btn btn-primary"
@@ -170,6 +253,116 @@ function ProvidersSection() {
           Add Provider
         </button>
       </form>
+    </div>
+  );
+}
+
+function BackgroundGenerationSettings() {
+  const [settings, setSettings] = useState({
+    background_generation_enabled: 'false',
+    background_generation_interval: '3600',
+    background_generation_count: '1',
+    background_generation_max_retries: '3',
+  });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    getSettings().then(data => {
+      const map = {};
+      (data || []).forEach(s => { map[s.key] = s.value; });
+      setSettings(prev => ({ ...prev, ...map }));
+      setLoading(false);
+    });
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await updateSettings({
+        background_generation_enabled: settings.background_generation_enabled,
+        background_generation_interval: settings.background_generation_interval,
+        background_generation_count: settings.background_generation_count,
+        background_generation_max_retries: settings.background_generation_max_retries,
+      });
+    } catch (err) {
+      alert('Failed to save: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) return null;
+
+  const enabled = settings.background_generation_enabled === 'true';
+  const intervals = [
+    { label: '30 minutes', value: '1800' },
+    { label: '1 hour', value: '3600' },
+    { label: '2 hours', value: '7200' },
+    { label: '6 hours', value: '21600' },
+    { label: '12 hours', value: '43200' },
+    { label: '24 hours', value: '86400' },
+  ];
+
+  return (
+    <div className="settings-section">
+      <h3>Background Generation</h3>
+      <p className="settings-description">
+        Automatically generate recipes on a schedule. Use the <code>background</code> tag on a provider (e.g. your always-on server)
+        to prefer it for background tasks.
+      </p>
+      <div className="settings-form">
+        <div className="settings-field">
+          <label>
+            <input
+              type="checkbox"
+              checked={enabled}
+              onChange={e => setSettings(s => ({ ...s, background_generation_enabled: e.target.checked ? 'true' : 'false' }))}
+              style={{ marginRight: 8 }}
+            />
+            Enable background generation
+          </label>
+        </div>
+        {enabled && (
+          <>
+            <div className="settings-field">
+              <label>Interval</label>
+              <select
+                value={settings.background_generation_interval}
+                onChange={e => setSettings(s => ({ ...s, background_generation_interval: e.target.value }))}
+              >
+                {intervals.map(i => <option key={i.value} value={i.value}>{i.label}</option>)}
+              </select>
+              <span className="settings-hint">How often to generate new recipes</span>
+            </div>
+            <div className="settings-field">
+              <label>Recipes per run</label>
+              <input
+                type="number"
+                min="1"
+                max="10"
+                value={settings.background_generation_count}
+                onChange={e => setSettings(s => ({ ...s, background_generation_count: e.target.value }))}
+              />
+              <span className="settings-hint">Number of recipes generated each interval</span>
+            </div>
+            <div className="settings-field">
+              <label>Max retries on invalid JSON</label>
+              <input
+                type="number"
+                min="0"
+                max="10"
+                value={settings.background_generation_max_retries}
+                onChange={e => setSettings(s => ({ ...s, background_generation_max_retries: e.target.value }))}
+              />
+              <span className="settings-hint">How many times to retry a recipe if the model returns invalid JSON (0 = no retries)</span>
+            </div>
+          </>
+        )}
+        <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+          {saving ? 'Saving...' : 'Save'}
+        </button>
+      </div>
     </div>
   );
 }
