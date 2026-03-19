@@ -48,18 +48,24 @@ func (q *Queries) ListEnabledOllamaProviders(ctx context.Context) ([]models.Olla
 }
 
 func (q *Queries) CreateOllamaProvider(ctx context.Context, p *models.OllamaProvider) error {
+	if p.Tags == nil {
+		p.Tags = []string{}
+	}
 	return q.pool.QueryRow(ctx, `
 		INSERT INTO ollama_providers (name, host, model, enabled, health_status, tags)
-		VALUES ($1, $2, $3, $4, 'unknown', $5)
+		VALUES ($1, $2, $3, $4, 'unknown', $5::TEXT[])
 		RETURNING id, created_at`,
 		p.Name, p.Host, p.Model, p.Enabled, p.Tags,
 	).Scan(&p.ID, &p.CreatedAt)
 }
 
 func (q *Queries) UpdateOllamaProvider(ctx context.Context, p *models.OllamaProvider) error {
+	if p.Tags == nil {
+		p.Tags = []string{}
+	}
 	tag, err := q.pool.Exec(ctx, `
 		UPDATE ollama_providers
-		SET name = $2, host = $3, model = $4, enabled = $5, health_status = $6, last_error = $7, tags = $8
+		SET name = $2, host = $3, model = $4, enabled = $5, health_status = $6, last_error = $7, tags = $8::TEXT[]
 		WHERE id = $1`,
 		p.ID, p.Name, p.Host, p.Model, p.Enabled, p.HealthStatus, p.LastError, p.Tags)
 	if err != nil {
