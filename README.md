@@ -46,7 +46,7 @@ docker run -d \
 
 ## Deploying on TrueNAS Scale
 
-TrueNAS Scale runs apps on k3s (Kubernetes). The steps below use the **Custom App** feature in the TrueNAS web UI.
+The steps below use the **Custom App** feature in the TrueNAS web UI.
 
 ### Prerequisites
 
@@ -133,27 +133,3 @@ When a new image is pushed to GHCR, TrueNAS does not auto-update. To update manu
 3. Change the Image Tag to the specific SHA you want (visible on the [GHCR page](https://github.com/rubenwo/recipes/pkgs/container/recipes))
 4. Click **Save**
 
----
-
-## Automatic updates on TrueNAS Scale (optional)
-
-TrueNAS Scale uses containerd (not Docker), so Watchtower doesn't work. The Kubernetes-native equivalent is **[Keel](https://keel.sh)**.
-
-### Install Keel into TrueNAS k3s
-
-```bash
-# SSH into TrueNAS
-k3s kubectl apply -f https://sunstone.dev/keel?namespace=keel
-```
-
-### Annotate the recipes deployment
-
-```bash
-k3s kubectl annotate deployment recipes \
-  keel.sh/policy=force \
-  keel.sh/trigger=poll \
-  keel.sh/pollSchedule="@every 5m" \
-  -n ix-recipes
-```
-
-Keel will poll GHCR every 5 minutes and restart the deployment when a new `latest` digest is detected.
