@@ -25,6 +25,7 @@ func NewRouter(h *handlers.RecipeHandler, g *handlers.GenerateHandler, mp *handl
 		r.Get("/recipes", h.List)
 		r.Post("/recipes", h.Create)
 		r.Post("/recipes/search", h.Search)
+		r.Get("/recipes/suggestions", h.Suggestions)
 		r.Get("/recipes/{id}", h.Get)
 		r.Delete("/recipes/{id}", h.Delete)
 		r.Post("/recipes/{id}/fetch-image", h.FetchImage)

@@ -260,9 +260,10 @@ function ProvidersSection() {
 function BackgroundGenerationSettings() {
   const [settings, setSettings] = useState({
     background_generation_enabled: 'false',
-    background_generation_interval: '3600',
+    background_generation_interval: '86400',
     background_generation_count: '1',
     background_generation_max_retries: '3',
+    background_generation_time: '',
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -284,6 +285,7 @@ function BackgroundGenerationSettings() {
         background_generation_interval: settings.background_generation_interval,
         background_generation_count: settings.background_generation_count,
         background_generation_max_retries: settings.background_generation_max_retries,
+        background_generation_time: settings.background_generation_time,
       });
     } catch (err) {
       alert('Failed to save: ' + err.message);
@@ -302,6 +304,8 @@ function BackgroundGenerationSettings() {
     { label: '6 hours', value: '21600' },
     { label: '12 hours', value: '43200' },
     { label: '24 hours', value: '86400' },
+    { label: '2 days', value: '172800' },
+    { label: '1 week', value: '604800' },
   ];
 
   return (
@@ -333,7 +337,18 @@ function BackgroundGenerationSettings() {
               >
                 {intervals.map(i => <option key={i.value} value={i.value}>{i.label}</option>)}
               </select>
-              <span className="settings-hint">How often to generate new recipes</span>
+              <span className="settings-hint">Minimum time between runs</span>
+            </div>
+            <div className="settings-field">
+              <label>Time of day</label>
+              <input
+                type="time"
+                value={settings.background_generation_time}
+                onChange={e => setSettings(s => ({ ...s, background_generation_time: e.target.value }))}
+              />
+              <span className="settings-hint">
+                Only generate at this time of day (leave empty to run as soon as the interval elapses)
+              </span>
             </div>
             <div className="settings-field">
               <label>Recipes per run</label>
@@ -402,6 +417,17 @@ function GeneralSettings() {
     <div className="settings-section">
       <h3>General</h3>
       <div className="settings-form">
+        <div className="settings-field">
+          <label>Daily suggestions</label>
+          <input
+            type="number"
+            min="1"
+            max="10"
+            value={settings.suggestion_count || '3'}
+            onChange={e => handleChange('suggestion_count', e.target.value)}
+          />
+          <span className="settings-hint">Number of daily recipe suggestions shown at the top of the Library</span>
+        </div>
         <div className="settings-field">
           <label>Default Servings</label>
           <input

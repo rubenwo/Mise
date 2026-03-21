@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"strconv"
 	"strings"
@@ -49,17 +50,31 @@ func (b *BackgroundGenerator) Start(ctx context.Context) {
 					log.Printf("Background: discarded %d expired pending recipe(s)", n)
 				}
 
-				enabled, interval, count, servings, maxRetries := b.loadSettings(ctx)
-				if !enabled || interval <= 0 {
+				s := b.loadSettings(ctx)
+				if !s.enabled || s.interval <= 0 {
 					continue
 				}
-				if time.Since(lastRun) < interval {
+
+				// If a time-of-day is configured, only fire once that clock time has
+				// been reached today and we haven't already run since then.
+				if s.timeHour >= 0 {
+					now := time.Now()
+					todayTarget := time.Date(now.Year(), now.Month(), now.Day(), s.timeHour, s.timeMin, 0, 0, now.Location())
+					if now.Before(todayTarget) {
+						continue // not yet time today
+					}
+					if !lastRun.IsZero() && lastRun.After(todayTarget) {
+						continue // already ran after today's scheduled time
+					}
+				}
+
+				if time.Since(lastRun) < s.interval {
 					continue
 				}
 				lastRun = time.Now()
-				nextRun := lastRun.Add(interval)
-				log.Printf("Background generation: starting %d recipe(s)", count)
-				b.runGeneration(ctx, count, servings, maxRetries, nextRun)
+				nextRun := lastRun.Add(s.interval)
+				log.Printf("Background generation: starting %d recipe(s)", s.count)
+				b.runGeneration(ctx, s.count, s.servings, s.maxRetries, nextRun)
 
 			case <-b.stop:
 				return
@@ -74,10 +89,23 @@ func (b *BackgroundGenerator) Stop() {
 	close(b.stop)
 }
 
-func (b *BackgroundGenerator) loadSettings(ctx context.Context) (enabled bool, interval time.Duration, count, servings, maxRetries int) {
+type bgSettings struct {
+	enabled    bool
+	interval   time.Duration
+	count      int
+	servings   int
+	maxRetries int
+	timeHour   int // -1 if not configured
+	timeMin    int
+}
+
+func (b *BackgroundGenerator) loadSettings(ctx context.Context) bgSettings {
+	s := bgSettings{timeHour: -1}
+
 	if val, _ := b.queries.GetSetting(ctx, "background_generation_enabled"); val != "true" {
-		return false, 0, 0, 0, 0
+		return s
 	}
+	s.enabled = true
 
 	intervalSecs := 3600 // default 1 hour
 	if val, _ := b.queries.GetSetting(ctx, "background_generation_interval"); val != "" {
@@ -85,29 +113,39 @@ func (b *BackgroundGenerator) loadSettings(ctx context.Context) (enabled bool, i
 			intervalSecs = n
 		}
 	}
+	s.interval = time.Duration(intervalSecs) * time.Second
 
-	count = 1
+	s.count = 1
 	if val, _ := b.queries.GetSetting(ctx, "background_generation_count"); val != "" {
 		if n, err := strconv.Atoi(val); err == nil && n > 0 && n <= 10 {
-			count = n
+			s.count = n
 		}
 	}
 
-	servings = 4
+	s.servings = 4
 	if val, _ := b.queries.GetSetting(ctx, "default_servings"); val != "" {
 		if n, err := strconv.Atoi(val); err == nil && n > 0 {
-			servings = n
+			s.servings = n
 		}
 	}
 
-	maxRetries = 3
+	s.maxRetries = 3
 	if val, _ := b.queries.GetSetting(ctx, "background_generation_max_retries"); val != "" {
 		if n, err := strconv.Atoi(val); err == nil && n >= 0 && n <= 10 {
-			maxRetries = n
+			s.maxRetries = n
 		}
 	}
 
-	return true, time.Duration(intervalSecs) * time.Second, count, servings, maxRetries
+	// Optional time-of-day: stored as "HH:MM", e.g. "08:30".
+	if val, _ := b.queries.GetSetting(ctx, "background_generation_time"); val != "" {
+		var h, m int
+		if _, err := fmt.Sscanf(val, "%d:%d", &h, &m); err == nil && h >= 0 && h <= 23 && m >= 0 && m <= 59 {
+			s.timeHour = h
+			s.timeMin = m
+		}
+	}
+
+	return s
 }
 
 func (b *BackgroundGenerator) runGeneration(ctx context.Context, count, servings, maxRetries int, nextRun time.Time) {

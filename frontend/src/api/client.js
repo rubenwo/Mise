@@ -32,6 +32,10 @@ export function deleteRecipe(id) {
   return request(`/recipes/${id}`, { method: 'DELETE' });
 }
 
+export function getRecipeSuggestions(count = 3) {
+  return request(`/recipes/suggestions?count=${count}`);
+}
+
 export function searchRecipes(params) {
   return request('/recipes/search', {
     method: 'POST',

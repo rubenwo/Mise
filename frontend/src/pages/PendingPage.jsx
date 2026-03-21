@@ -1,22 +1,24 @@
 import { useState, useEffect, useRef } from 'react';
-import { listPendingRecipes, approvePendingRecipe, rejectPendingRecipe } from '../api/client';
+import { listPendingRecipes, approvePendingRecipe, rejectPendingRecipe, getSettings } from '../api/client';
 import RecipeCard from '../components/RecipeCard';
 
 export default function PendingPage({ onCountChange }) {
   const [recipes, setRecipes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [bgEnabled, setBgEnabled] = useState(false);
   const [acting, setActing] = useState({});
   const [generatingMsg, setGeneratingMsg] = useState(null);
   const generatingTimerRef = useRef(null);
 
   useEffect(() => {
-    listPendingRecipes()
-      .then(data => {
-        const list = data || [];
-        setRecipes(list);
-        onCountChange?.(list.length);
-      })
-      .finally(() => setLoading(false));
+    Promise.all([listPendingRecipes(), getSettings()]).then(([data, settings]) => {
+      const list = data || [];
+      setRecipes(list);
+      onCountChange?.(list.length);
+      const map = {};
+      (settings || []).forEach(s => { map[s.key] = s.value; });
+      setBgEnabled(map.background_generation_enabled === 'true');
+    }).finally(() => setLoading(false));
   }, []);
 
   // Stream background generation events from the server.
@@ -101,7 +103,11 @@ export default function PendingPage({ onCountChange }) {
       </p>
 
       {recipes.length === 0 ? (
-        <p className="empty-state">No pending recipes. Enable background generation in Settings to get some.</p>
+        <p className="empty-state">
+          {bgEnabled
+            ? 'No pending recipes yet. More will appear here automatically.'
+            : 'No pending recipes. Enable background generation in Settings to get some.'}
+        </p>
       ) : (
         <div className="pending-list">
           {recipes.map(recipe => (

@@ -5,5 +5,5 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - /mnt/tank/recipes/config.yaml:/app/config.yaml:ro
-      - /mnt/tank/recipes/images:/app/images
+      - /mnt/Storage/NAS/Eten/config.yaml:/app/config.yaml:ro
+      - /mnt/Storage/NAS/Eten/images:/app/images

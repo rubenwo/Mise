@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import RecipeCard from '../components/RecipeCard';
 import RecipeList from '../components/RecipeList';
 import { useRecipes } from '../hooks/useRecipes';
 import { filterRecipes } from '../utils/fuzzyMatch';
+import { getRecipeSuggestions, getSettings } from '../api/client';
 
 const CUISINE_COLORS = [
   '#c2410c', '#0d9488', '#7c3aed', '#b45309',
@@ -51,10 +52,48 @@ function CuisineGroup({ cuisine, recipes, expanded, onToggle, onDelete }) {
   );
 }
 
+function SuggestedCarousel({ count }) {
+  const [recipes, setRecipes] = useState([]);
+
+  useEffect(() => {
+    if (!count || count < 1) return;
+    getRecipeSuggestions(count)
+      .then(data => setRecipes(data || []))
+      .catch(() => {});
+  }, [count]);
+
+  if (recipes.length === 0) return null;
+
+  return (
+    <div className="suggestions-carousel">
+      <div className="suggestions-carousel-header">
+        <h3>Today's picks</h3>
+        <span className="suggestions-carousel-hint">Refreshes daily · based on your library</span>
+      </div>
+      <div className="suggestions-carousel-track">
+        {recipes.map(recipe => (
+          <RecipeCard key={recipe.id} recipe={recipe} showLink />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function LibraryPage() {
   const { recipes, total, loading, error, remove } = useRecipes();
   const [query, setQuery] = useState('');
   const [expandedCuisines, setExpandedCuisines] = useState(new Set());
+  const [suggestionCount, setSuggestionCount] = useState(3);
+
+  useEffect(() => {
+    getSettings()
+      .then(data => {
+        const map = {};
+        (data || []).forEach(s => { map[s.key] = s.value; });
+        if (map.suggestion_count) setSuggestionCount(parseInt(map.suggestion_count, 10) || 3);
+      })
+      .catch(() => {});
+  }, []);
 
   const filtered = filterRecipes(query, recipes);
 
@@ -98,6 +137,9 @@ export default function LibraryPage() {
         </p>
       )}
       {error && <div className="error-message">{error}</div>}
+      {!query && !loading && total >= suggestionCount && (
+        <SuggestedCarousel count={suggestionCount} />
+      )}
       {loading ? (
         <p>Loading...</p>
       ) : query ? (

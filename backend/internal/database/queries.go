@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -220,6 +222,53 @@ func (q *Queries) SearchRecipes(ctx context.Context, req models.SearchRequest) (
 	defer rows.Close()
 
 	return scanRecipes(rows, total)
+}
+
+type RecipeMeta struct {
+	ID          int
+	CuisineType string
+	CreatedAt   time.Time
+}
+
+func (q *Queries) ListRecipeMeta(ctx context.Context) ([]RecipeMeta, error) {
+	rows, err := q.pool.Query(ctx, "SELECT id, cuisine_type, created_at FROM recipes ORDER BY id")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []RecipeMeta
+	for rows.Next() {
+		var m RecipeMeta
+		if err := rows.Scan(&m.ID, &m.CuisineType, &m.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+func (q *Queries) GetRecipesByIDs(ctx context.Context, ids []int) ([]models.Recipe, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	placeholders := make([]string, len(ids))
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = id
+	}
+	rows, err := q.pool.Query(ctx, fmt.Sprintf(`
+		SELECT id, title, description, cuisine_type, prep_time_minutes, cook_time_minutes,
+			servings, difficulty, ingredients, instructions, dietary_restrictions, tags,
+			generated_by_model, generation_prompt, COALESCE(image_url, ''), created_at, updated_at
+		FROM recipes WHERE id IN (%s)`, strings.Join(placeholders, ",")), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	recipes, _, err := scanRecipes(rows, len(ids))
+	return recipes, err
 }
 
 func (q *Queries) CreateGenerationChat(ctx context.Context, prompt, model string, messagesJSON []byte) error {

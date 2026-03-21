@@ -24,36 +24,55 @@ func NewImageSearcher(timeout time.Duration, imagesDir string) *ImageSearcher {
 	return &ImageSearcher{client: &http.Client{Timeout: timeout}, imagesDir: imagesDir}
 }
 
-// SearchAndDownloadRecipeImage searches for an image, downloads it to the local images
-// directory, and returns a local URL path (e.g. /images/recipe-42.jpg). Falls back to
-// returning the external URL if download or save fails.
+// SearchAndDownloadRecipeImage searches for images, tries each candidate URL in order,
+// and returns a local path once one downloads successfully. Falls back to the first
+// remote URL if every download attempt fails.
 func (s *ImageSearcher) SearchAndDownloadRecipeImage(ctx context.Context, recipeTitle, filename string) (string, error) {
-	remoteURL, err := s.SearchRecipeImage(ctx, recipeTitle)
+	candidates, err := s.searchRecipeImageCandidates(ctx, recipeTitle)
 	if err != nil {
 		return "", err
 	}
 
 	if s.imagesDir == "" {
-		return remoteURL, nil
+		return candidates[0], nil
 	}
 
 	if err := os.MkdirAll(s.imagesDir, 0755); err != nil {
 		log.Printf("Image download: could not create images dir: %v", err)
-		return remoteURL, nil
+		return candidates[0], nil
 	}
 
+	for i, remoteURL := range candidates {
+		localURL, err := s.tryDownload(ctx, remoteURL, filename)
+		if err != nil {
+			log.Printf("Image download: candidate %d/%d skipped (%s): %v", i+1, len(candidates), remoteURL, err)
+			continue
+		}
+		return localURL, nil
+	}
+
+	log.Printf("Image download: all %d candidate(s) failed for %q, using remote URL", len(candidates), recipeTitle)
+	return candidates[0], nil
+}
+
+// tryDownload fetches remoteURL and saves it to disk. Returns the local /images/ path on
+// success, or an error if the server returns a non-2xx status or the transfer fails.
+func (s *ImageSearcher) tryDownload(ctx context.Context, remoteURL, filename string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", remoteURL, nil)
 	if err != nil {
-		return remoteURL, nil
+		return "", err
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		log.Printf("Image download: failed to download %s: %v", remoteURL, err)
-		return remoteURL, nil
+		return "", err
 	}
 	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
 
 	ext := extFromContentType(resp.Header.Get("Content-Type"))
 	if ext == "" {
@@ -66,15 +85,13 @@ func (s *ImageSearcher) SearchAndDownloadRecipeImage(ctx context.Context, recipe
 	localPath := filepath.Join(s.imagesDir, filename+ext)
 	f, err := os.Create(localPath)
 	if err != nil {
-		log.Printf("Image download: could not create file %s: %v", localPath, err)
-		return remoteURL, nil
+		return "", fmt.Errorf("create file: %w", err)
 	}
 	defer func() { _ = f.Close() }()
 
 	if _, err := io.Copy(f, io.LimitReader(resp.Body, 10*1024*1024)); err != nil {
 		_ = os.Remove(localPath)
-		log.Printf("Image download: failed to write %s: %v", localPath, err)
-		return remoteURL, nil
+		return "", fmt.Errorf("write file: %w", err)
 	}
 
 	return "/images/" + filename + ext, nil
@@ -113,17 +130,25 @@ func extFromURL(rawURL string) string {
 	return ""
 }
 
-// SearchRecipeImage returns the first usable image URL for the given recipe title
-// using DuckDuckGo's two-step image search (vqd token + image JSON endpoint).
+// SearchRecipeImage returns the first usable image URL for the given recipe title.
 func (s *ImageSearcher) SearchRecipeImage(ctx context.Context, recipeTitle string) (string, error) {
+	candidates, err := s.searchRecipeImageCandidates(ctx, recipeTitle)
+	if err != nil {
+		return "", err
+	}
+	return candidates[0], nil
+}
+
+// searchRecipeImageCandidates returns all usable image URLs found for the recipe title.
+func (s *ImageSearcher) searchRecipeImageCandidates(ctx context.Context, recipeTitle string) ([]string, error) {
 	query := recipeTitle + " food recipe"
 
 	vqd, err := s.fetchVQD(ctx, query)
 	if err != nil {
-		return "", fmt.Errorf("fetching vqd token: %w", err)
+		return nil, fmt.Errorf("fetching vqd token: %w", err)
 	}
 
-	return s.fetchImage(ctx, query, vqd)
+	return s.fetchImageCandidates(ctx, query, vqd)
 }
 
 // fetchVQD retrieves the vqd token DuckDuckGo requires for image searches.
@@ -163,8 +188,8 @@ func (s *ImageSearcher) fetchVQD(ctx context.Context, query string) (string, err
 	return "", fmt.Errorf("vqd token not found in DuckDuckGo response")
 }
 
-// fetchImage calls DDG's image JSON endpoint and returns the first suitable image URL.
-func (s *ImageSearcher) fetchImage(ctx context.Context, query, vqd string) (string, error) {
+// fetchImageCandidates calls DDG's image JSON endpoint and returns all suitable image URLs.
+func (s *ImageSearcher) fetchImageCandidates(ctx context.Context, query, vqd string) ([]string, error) {
 	u := fmt.Sprintf(
 		"https://duckduckgo.com/i.js?q=%s&o=json&vqd=%s&f=,,,,,&p=1",
 		url.QueryEscape(query), url.QueryEscape(vqd),
@@ -172,7 +197,7 @@ func (s *ImageSearcher) fetchImage(ctx context.Context, query, vqd string) (stri
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 	req.Header.Set("Referer", "https://duckduckgo.com/")
@@ -180,13 +205,13 @@ func (s *ImageSearcher) fetchImage(ctx context.Context, query, vqd string) (stri
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return "", fmt.Errorf("image search returned %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("image search returned %d: %s", resp.StatusCode, string(body))
 	}
 
 	var result struct {
@@ -198,9 +223,10 @@ func (s *ImageSearcher) fetchImage(ctx context.Context, query, vqd string) (stri
 		} `json:"results"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("decoding image results: %w", err)
+		return nil, fmt.Errorf("decoding image results: %w", err)
 	}
 
+	var candidates []string
 	for _, r := range result.Results {
 		img := r.Image
 		if img == "" {
@@ -213,12 +239,14 @@ func (s *ImageSearcher) fetchImage(ctx context.Context, query, vqd string) (stri
 		if strings.HasSuffix(lower, ".svg") || strings.Contains(lower, "favicon") {
 			continue
 		}
-		// Prefer reasonably-sized images.
 		if r.Width > 0 && r.Width < 100 {
 			continue
 		}
-		return img, nil
+		candidates = append(candidates, img)
 	}
 
-	return "", fmt.Errorf("no image found for %q", query)
+	if len(candidates) == 0 {
+		return nil, fmt.Errorf("no image found for %q", query)
+	}
+	return candidates, nil
 }
