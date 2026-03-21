@@ -1,0 +1,11 @@
+frontend/node_modules
+frontend/dist
+backend/internal/frontend/dist
+backend/server
+backend/server.exe
+backend/images
+backend/config.yaml
+.git
+.github
+*.md
+.claude
