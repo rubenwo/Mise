@@ -121,6 +121,10 @@ export function randomizePlan(planId, servings) {
   });
 }
 
+export function orderPlanAH(planId) {
+  return request(`/plans/${planId}/order/ah`, { method: 'POST' });
+}
+
 // Settings
 export function listProviders() {
   return request('/settings/providers');

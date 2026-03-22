@@ -50,6 +50,7 @@ func NewRouter(h *handlers.RecipeHandler, g *handlers.GenerateHandler, mp *handl
 		r.Post("/plans/{id}/recipes", mp.AddRecipe)
 		r.Delete("/plans/{id}/recipes/{recipeId}", mp.RemoveRecipe)
 		r.Patch("/plans/{id}/recipes/{recipeId}", mp.UpdateRecipe)
+		r.Post("/plans/{id}/order/ah", mp.OrderAH)
 
 		r.Get("/pending", p.List)
 		r.Get("/pending/events", p.Stream)

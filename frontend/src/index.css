@@ -841,6 +841,9 @@ a, button, input, select, textarea { transition: all 0.15s ease; }
 
 /* ── Ingredient Summary ───────────────────────────────── */
 .ingredient-summary { margin-top: 20px; background: var(--bg); border-radius: 8px; padding: 20px; border: 1px solid var(--border); }
+.ingredient-summary-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.ingredient-summary-header h4 { margin: 0; font-size: 13px; font-weight: 700; }
+.ah-order-btn { font-size: 12px; }
 .ingredient-summary h4 { font-size: 13px; font-weight: 700; margin-bottom: 12px; }
 .ingredient-summary-list { list-style: none; padding: 0; }
 .ingredient-summary-item { border-bottom: 1px solid var(--border); }
@@ -972,3 +975,35 @@ a, button, input, select, textarea { transition: all 0.15s ease; }
 .edit-instruction-textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px rgba(181,69,27,0.1); }
 .recipe-edit-actions { display: flex; gap: 10px; margin-top: 8px; }
 .recipe-edit-trigger { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+
+/* ── Modal ────────────────────────────────────────────── */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.modal { background: var(--surface); border-radius: 10px; box-shadow: 0 8px 32px rgba(0,0,0,0.18); width: 100%; max-width: 600px; max-height: 85vh; display: flex; flex-direction: column; overflow: hidden; }
+.modal-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px 14px; border-bottom: 1px solid var(--border); }
+.modal-header h3 { margin: 0; font-size: 16px; font-weight: 700; }
+.modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--text-secondary); line-height: 1; padding: 2px 6px; border-radius: 4px; }
+.modal-close:hover { background: var(--bg); color: var(--text); }
+.modal-body { padding: 20px; overflow-y: auto; flex: 1; }
+.modal-intro { font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; }
+.modal-error { color: var(--danger); font-size: 13px; margin-bottom: 12px; }
+.modal-loading { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 40px 20px; }
+.modal-footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+
+/* ── AH Order Results ─────────────────────────────────── */
+.ah-not-found { margin-bottom: 20px; background: #fff8f0; border: 1px solid #f5d0a9; border-radius: 8px; padding: 14px 16px; }
+.ah-not-found h4 { font-size: 13px; font-weight: 700; color: #b05c00; margin-bottom: 6px; }
+.ah-not-found-hint { font-size: 12px; color: var(--text-secondary); margin-bottom: 10px; }
+.ah-not-found-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.ah-not-found-list li { display: flex; align-items: center; justify-content: space-between; font-size: 13px; padding: 4px 0; border-bottom: 1px solid #f5d0a9; }
+.ah-not-found-list li:last-child { border-bottom: none; }
+.ah-not-found-name { font-weight: 600; }
+.ah-not-found-amount { color: var(--text-secondary); font-size: 12px; }
+.ah-matched h4 { font-size: 13px; font-weight: 700; margin-bottom: 10px; }
+.ah-matched-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.ah-product { display: flex; align-items: center; gap: 12px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+.ah-product-img { width: 48px; height: 48px; object-fit: contain; border-radius: 4px; flex-shrink: 0; background: white; }
+.ah-product-info { flex: 1; min-width: 0; }
+.ah-product-title { display: block; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ah-product-sub { display: block; font-size: 11px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ah-product-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
+.ah-product-price { font-size: 13px; font-weight: 700; color: var(--primary); }

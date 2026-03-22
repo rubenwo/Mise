@@ -7,6 +7,7 @@ import {
   saveRecipe, randomizePlan,
 } from '../api/client';
 import RecipeCard from '../components/RecipeCard';
+import AHOrderModal from '../components/AHOrderModal';
 import { filterRecipes } from '../utils/fuzzyMatch';
 
 function BrowseRecipeCard({ recipe, servings, onServingsChange, onAdd, adding }) {
@@ -386,6 +387,7 @@ function IngredientSummary({ ingredients, planId }) {
   const [suggestions, setSuggestions] = useState(null);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [savedGenerated, setSavedGenerated] = useState(false);
+  const [showAHModal, setShowAHModal] = useState(false);
 
   const selectedNames = ingredients.filter((_, i) => selected[i]).map(ing => ing.name);
 
@@ -416,8 +418,14 @@ function IngredientSummary({ ingredients, planId }) {
 
   return (
     <div className="ingredient-summary">
-      <h4>Shopping List ({ingredients.length} items)</h4>
+      <div className="ingredient-summary-header">
+        <h4>Shopping List ({ingredients.length} items)</h4>
+        <button className="btn btn-secondary btn-sm ah-order-btn" onClick={() => setShowAHModal(true)}>
+          Order at Albert Heijn
+        </button>
+      </div>
       <p className="ingredient-summary-hint">Select leftover ingredients to find recipes that use them</p>
+      {showAHModal && <AHOrderModal planId={planId} onClose={() => setShowAHModal(false)} />}
       <ul className="ingredient-summary-list">
         {ingredients.map((ing, i) => (
           <li key={i} className="ingredient-summary-item">

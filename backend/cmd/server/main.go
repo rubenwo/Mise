@@ -113,7 +113,7 @@ func main() {
 	imageSearcher := tools.NewImageSearcher(cfg.Search.Timeout, cfg.Server.ImagesDir)
 	recipeHandler := handlers.NewRecipeHandler(queries, imageSearcher, clientPool)
 	generateHandler := handlers.NewGenerateHandler(orchestrator, queries)
-	mealPlanHandler := handlers.NewMealPlanHandler(queries, orchestrator)
+	mealPlanHandler := handlers.NewMealPlanHandler(queries, orchestrator, cfg.Search.Timeout)
 	settingsHandler := handlers.NewSettingsHandler(queries, clientPool, genTimeout)
 	pendingHandler := handlers.NewPendingHandler(queries, imageSearcher, hub)
 

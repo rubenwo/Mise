@@ -8,10 +8,13 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/rubenwo/recipes/internal/database"
+	"github.com/rubenwo/recipes/internal/integrations/ah"
 	"github.com/rubenwo/recipes/internal/llm"
 	"github.com/rubenwo/recipes/internal/models"
 )
@@ -19,10 +22,11 @@ import (
 type MealPlanHandler struct {
 	queries      *database.Queries
 	orchestrator *llm.Orchestrator
+	ahClient     *ah.Client
 }
 
-func NewMealPlanHandler(q *database.Queries, o *llm.Orchestrator) *MealPlanHandler {
-	return &MealPlanHandler{queries: q, orchestrator: o}
+func NewMealPlanHandler(q *database.Queries, o *llm.Orchestrator, searchTimeout time.Duration) *MealPlanHandler {
+	return &MealPlanHandler{queries: q, orchestrator: o, ahClient: ah.NewClient(searchTimeout)}
 }
 
 func (h *MealPlanHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -134,29 +138,19 @@ type AggregatedIngredient struct {
 	Recipes []string `json:"recipes"`
 }
 
-func (h *MealPlanHandler) Ingredients(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
-		return
-	}
-
-	// Return cached normalized ingredients if available.
+// getPlanIngredients returns the aggregated ingredient list for a plan,
+// using the cache when available.
+func (h *MealPlanHandler) getPlanIngredients(r *http.Request, id int) ([]AggregatedIngredient, error) {
 	if cached, err := h.queries.GetPlanNormalizedIngredients(r.Context(), id); err == nil && len(cached) > 0 {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(cached)
-		return
+		var result []AggregatedIngredient
+		if err := json.Unmarshal(cached, &result); err == nil {
+			return result, nil
+		}
 	}
 
 	plan, err := h.queries.GetMealPlan(r.Context(), id)
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			writeError(w, http.StatusNotFound, "plan not found")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "failed to get plan")
-		return
+		return nil, err
 	}
 
 	type key struct{ name, unit string }
@@ -169,7 +163,6 @@ func (h *MealPlanHandler) Ingredients(w http.ResponseWriter, r *http.Request) {
 			scale = float64(mpr.Servings) / float64(mpr.Recipe.Servings)
 		}
 		for _, ing := range mpr.Recipe.Ingredients {
-			// Strip common trailing modifiers before keying to improve pre-LLM dedup.
 			normalizedName := normalizeIngredientName(ing.Name)
 			k := key{normalizedName, strings.ToLower(ing.Unit)}
 			if agg[k] == nil {
@@ -194,17 +187,114 @@ func (h *MealPlanHandler) Ingredients(w http.ResponseWriter, r *http.Request) {
 		return strings.ToLower(result[i].Name) < strings.ToLower(result[j].Name)
 	})
 
-	// Consolidate duplicate ingredients deterministically (skip for single-recipe plans).
 	if len(plan.Recipes) > 1 {
 		result = consolidateIngredients(result)
 	}
 
-	// Always cache the result so subsequent calls skip re-computation.
 	if cacheJSON, err := json.Marshal(result); err == nil {
 		_ = h.queries.SetPlanNormalizedIngredients(r.Context(), id, cacheJSON)
 	}
 
+	return result, nil
+}
+
+func (h *MealPlanHandler) Ingredients(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	result, err := h.getPlanIngredients(r, id)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			writeError(w, http.StatusNotFound, "plan not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to get plan")
+		return
+	}
+
 	writeJSON(w, http.StatusOK, result)
+}
+
+type AHOrderResult struct {
+	Matched  []AHMatchedIngredient `json:"matched"`
+	NotFound []AggregatedIngredient `json:"not_found"`
+}
+
+type AHMatchedIngredient struct {
+	Ingredient AggregatedIngredient `json:"ingredient"`
+	Product    ah.Product           `json:"product"`
+}
+
+func (h *MealPlanHandler) OrderAH(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	ingredients, err := h.getPlanIngredients(r, id)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			writeError(w, http.StatusNotFound, "plan not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to get plan ingredients")
+		return
+	}
+
+	if len(ingredients) == 0 {
+		writeJSON(w, http.StatusOK, AHOrderResult{Matched: []AHMatchedIngredient{}, NotFound: []AggregatedIngredient{}})
+		return
+	}
+
+	// Search AH for each ingredient in parallel (max 5 concurrent requests).
+	type result struct {
+		idx     int
+		product *ah.Product
+		err     error
+	}
+
+	sem := make(chan struct{}, 5)
+	results := make([]result, len(ingredients))
+	var wg sync.WaitGroup
+
+	for i, ing := range ingredients {
+		wg.Add(1)
+		go func(idx int, name string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			p, err := h.ahClient.SearchProduct(name)
+			results[idx] = result{idx: idx, product: p, err: err}
+		}(i, ing.Name)
+	}
+	wg.Wait()
+
+	var matched []AHMatchedIngredient
+	var notFound []AggregatedIngredient
+
+	for i, res := range results {
+		if res.err != nil || res.product == nil {
+			notFound = append(notFound, ingredients[i])
+		} else {
+			matched = append(matched, AHMatchedIngredient{
+				Ingredient: ingredients[i],
+				Product:    *res.product,
+			})
+		}
+	}
+
+	if matched == nil {
+		matched = []AHMatchedIngredient{}
+	}
+	if notFound == nil {
+		notFound = []AggregatedIngredient{}
+	}
+
+	writeJSON(w, http.StatusOK, AHOrderResult{Matched: matched, NotFound: notFound})
 }
 
 // normalizeIngredientName strips common trailing modifiers so ingredients like
