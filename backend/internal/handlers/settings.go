@@ -125,7 +125,17 @@ var allowedSettingKeys = map[string]struct{}{
 	"edamam_app_id":      {},
 	"edamam_app_key":     {},
 	"ollama_host":        {},
-	"ui_language":        {},
+	// General settings
+	"suggestion_count":    {},
+	"default_servings":    {},
+	"max_tool_iterations": {},
+	"ui_language":         {},
+	// Background generation settings
+	"background_generation_enabled":     {},
+	"background_generation_interval":    {},
+	"background_generation_count":       {},
+	"background_generation_max_retries": {},
+	"background_generation_time":        {},
 }
 
 func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
