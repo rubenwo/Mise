@@ -177,21 +177,42 @@ func (h *SettingsHandler) ListModels(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "host query parameter is required")
 		return
 	}
+	providerType := r.URL.Query().Get("type")
+	if providerType == "" {
+		providerType = "ollama"
+	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	httpClient := &http.Client{Timeout: 10 * time.Second}
+
+	var names []string
+	var fetchErr error
+
+	switch llm.ProviderType(providerType) {
+	case llm.ProviderTypeOpenAICompat:
+		names, fetchErr = listModelsOpenAICompat(httpClient, host)
+	default:
+		names, fetchErr = listModelsOllama(httpClient, host)
+	}
+
+	if fetchErr != nil {
+		log.Printf("ListModels: %v", fetchErr)
+		writeError(w, http.StatusBadGateway, fetchErr.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, names)
+}
+
+func listModelsOllama(client *http.Client, host string) ([]string, error) {
 	resp, err := client.Get(host + "/api/tags")
 	if err != nil {
-		log.Printf("ListModels: failed to reach Ollama at %s: %v", host, err)
-		writeError(w, http.StatusBadGateway, "failed to reach Ollama: connection error")
-		return
+		return nil, fmt.Errorf("failed to reach provider: connection error")
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		log.Printf("ListModels: Ollama returned %d: %s", resp.StatusCode, string(body))
-		writeError(w, http.StatusBadGateway, fmt.Sprintf("Ollama returned unexpected status %d", resp.StatusCode))
-		return
+		return nil, fmt.Errorf("provider returned unexpected status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var tags struct {
@@ -200,16 +221,42 @@ func (h *SettingsHandler) ListModels(w http.ResponseWriter, r *http.Request) {
 		} `json:"models"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to decode Ollama response")
-		return
+		return nil, fmt.Errorf("failed to decode response")
 	}
 
 	names := make([]string, len(tags.Models))
 	for i, m := range tags.Models {
 		names[i] = m.Name
 	}
+	return names, nil
+}
 
-	writeJSON(w, http.StatusOK, names)
+func listModelsOpenAICompat(client *http.Client, host string) ([]string, error) {
+	resp, err := client.Get(host + "/v1/models")
+	if err != nil {
+		return nil, fmt.Errorf("failed to reach provider: connection error")
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("provider returned unexpected status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response")
+	}
+
+	names := make([]string, len(result.Data))
+	for i, m := range result.Data {
+		names[i] = m.ID
+	}
+	return names, nil
 }
 
 func (h *SettingsHandler) reloadPool(r *http.Request) {
@@ -219,7 +266,14 @@ func (h *SettingsHandler) reloadPool(r *http.Request) {
 	}
 	configs := make([]llm.ProviderConfig, len(providers))
 	for i, p := range providers {
-		configs[i] = llm.ProviderConfig{Host: p.Host, Model: p.Model, Timeout: h.timeout, ProviderID: p.ID, Tags: p.Tags}
+		configs[i] = llm.ProviderConfig{
+			Host:         p.Host,
+			Model:        p.Model,
+			ProviderType: llm.ProviderType(p.ProviderType),
+			Timeout:      h.timeout,
+			ProviderID:   p.ID,
+			Tags:         p.Tags,
+		}
 	}
 	h.pool.Reload(configs)
 }

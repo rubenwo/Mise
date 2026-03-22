@@ -130,8 +130,8 @@ export function listProviders() {
   return request('/settings/providers');
 }
 
-export function listModels(host) {
-  return request(`/settings/models?host=${encodeURIComponent(host)}`);
+export function listModels(host, type = 'ollama') {
+  return request(`/settings/models?host=${encodeURIComponent(host)}&type=${encodeURIComponent(type)}`);
 }
 
 export function createProvider(provider) {

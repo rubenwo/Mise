@@ -65,17 +65,17 @@ function TagPicker({ tags = [], onChange }) {
   );
 }
 
-function ModelInput({ host, value, onChange, id }) {
+function ModelInput({ host, providerType = 'ollama', value, onChange, id }) {
   const [models, setModels] = useState([]);
 
   useEffect(() => {
     if (!host) { setModels([]); return; }
     let cancelled = false;
-    listModels(host)
+    listModels(host, providerType)
       .then(data => { if (!cancelled) setModels(data || []); })
       .catch(() => { if (!cancelled) setModels([]); });
     return () => { cancelled = true; };
-  }, [host]);
+  }, [host, providerType]);
 
   return (
     <>
@@ -95,7 +95,7 @@ function ModelInput({ host, value, onChange, id }) {
 function ProvidersSection() {
   const [providers, setProviders] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState({ name: '', host: '', model: '', tags: [] });
+  const [form, setForm] = useState({ name: '', host: '', model: '', provider_type: 'ollama', tags: [] });
   const [editing, setEditing] = useState(null);
 
   useEffect(() => {
@@ -111,7 +111,7 @@ function ProvidersSection() {
     e.preventDefault();
     if (!form.name || !form.host || !form.model) return;
     await createProvider({ ...form, enabled: true });
-    setForm({ name: '', host: '', model: '', tags: [] });
+    setForm({ name: '', host: '', model: '', provider_type: 'ollama', tags: [] });
     reload();
   };
 
@@ -136,9 +136,10 @@ function ProvidersSection() {
 
   return (
     <div className="settings-section">
-      <h3>Ollama Providers</h3>
+      <h3>LLM Providers</h3>
       <p className="settings-description">
-        Configure multiple Ollama endpoints. Batch generation distributes work across enabled providers.
+        Configure LLM endpoints. Supports native Ollama and any OpenAI-compatible API (LiteLLM, vLLM, llama.cpp).
+        Batch generation distributes work across enabled providers.
       </p>
 
       <div className="providers-list">
@@ -156,8 +157,16 @@ function ProvidersSection() {
                   onChange={e => setEditing({ ...editing, host: e.target.value })}
                   placeholder="Host URL"
                 />
+                <select
+                  value={editing.provider_type || 'ollama'}
+                  onChange={e => setEditing({ ...editing, provider_type: e.target.value })}
+                >
+                  <option value="ollama">Ollama</option>
+                  <option value="openai_compat">OpenAI-compatible</option>
+                </select>
                 <ModelInput
                   host={editing.host}
+                  providerType={editing.provider_type || 'ollama'}
                   value={editing.model}
                   onChange={e => setEditing({ ...editing, model: e.target.value })}
                   id={`edit-models-${editing.id}`}
@@ -177,6 +186,9 @@ function ProvidersSection() {
                   <strong>{p.name}</strong>
                   <span className="provider-host">{p.host}</span>
                   <span className="provider-model">{p.model}</span>
+                  {p.provider_type && p.provider_type !== 'ollama' && (
+                    <span className="tag">{p.provider_type}</span>
+                  )}
                   {p.tags && p.tags.length > 0 && (
                     <span className="provider-tags">
                       {p.tags.map(t => <span key={t} className="tag">{t}</span>)}
@@ -216,8 +228,16 @@ function ProvidersSection() {
             onChange={e => setForm({ ...form, host: e.target.value })}
             placeholder="Host URL (e.g. http://192.168.1.100:11434)"
           />
+          <select
+            value={form.provider_type}
+            onChange={e => setForm({ ...form, provider_type: e.target.value })}
+          >
+            <option value="ollama">Ollama</option>
+            <option value="openai_compat">OpenAI-compatible</option>
+          </select>
           <ModelInput
             host={form.host}
+            providerType={form.provider_type}
             value={form.model}
             onChange={e => setForm({ ...form, model: e.target.value })}
             id="add-models"

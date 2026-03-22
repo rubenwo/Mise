@@ -11,11 +11,12 @@ import (
 
 
 type ProviderConfig struct {
-	Host       string
-	Model      string
-	Timeout    time.Duration
-	ProviderID int
-	Tags       []string
+	Host         string
+	Model        string
+	ProviderType ProviderType
+	Timeout      time.Duration
+	ProviderID   int
+	Tags         []string
 }
 
 type ClientPool struct {
@@ -35,7 +36,7 @@ func NewClientPool(providers []ProviderConfig) *ClientPool {
 func (p *ClientPool) buildClients(providers []ProviderConfig) {
 	clients := make([]*Client, 0, len(providers))
 	for _, prov := range providers {
-		clients = append(clients, NewClient(prov.Host, prov.Model, prov.Timeout, prov.ProviderID, prov.Tags))
+		clients = append(clients, NewClient(prov.Host, prov.Model, prov.ProviderType, prov.Timeout, prov.ProviderID, prov.Tags))
 	}
 	p.clients = clients
 	p.next = 0

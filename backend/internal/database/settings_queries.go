@@ -9,7 +9,7 @@ import (
 
 func (q *Queries) ListOllamaProviders(ctx context.Context) ([]models.OllamaProvider, error) {
 	rows, err := q.pool.Query(ctx, `
-		SELECT id, name, host, model, enabled, created_at, health_status, last_health_check, last_error, tags
+		SELECT id, name, host, model, provider_type, enabled, created_at, health_status, last_health_check, last_error, tags
 		FROM ollama_providers ORDER BY id`)
 	if err != nil {
 		return nil, err
@@ -19,10 +19,9 @@ func (q *Queries) ListOllamaProviders(ctx context.Context) ([]models.OllamaProvi
 	var providers []models.OllamaProvider
 	for rows.Next() {
 		var p models.OllamaProvider
-		if err := rows.Scan(&p.ID, &p.Name, &p.Host, &p.Model, &p.Enabled, &p.CreatedAt, &p.HealthStatus, &p.LastHealthCheck, &p.LastError, &p.Tags); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Host, &p.Model, &p.ProviderType, &p.Enabled, &p.CreatedAt, &p.HealthStatus, &p.LastHealthCheck, &p.LastError, &p.Tags); err != nil {
 			return nil, err
 		}
-
 		providers = append(providers, p)
 	}
 	return providers, rows.Err()
@@ -30,7 +29,7 @@ func (q *Queries) ListOllamaProviders(ctx context.Context) ([]models.OllamaProvi
 
 func (q *Queries) ListEnabledOllamaProviders(ctx context.Context) ([]models.OllamaProvider, error) {
 	rows, err := q.pool.Query(ctx, `
-		SELECT id, name, host, model, enabled, created_at, health_status, last_health_check, last_error, tags
+		SELECT id, name, host, model, provider_type, enabled, created_at, health_status, last_health_check, last_error, tags
 		FROM ollama_providers WHERE enabled = TRUE ORDER BY id`)
 	if err != nil {
 		return nil, err
@@ -40,7 +39,7 @@ func (q *Queries) ListEnabledOllamaProviders(ctx context.Context) ([]models.Olla
 	var providers []models.OllamaProvider
 	for rows.Next() {
 		var p models.OllamaProvider
-		if err := rows.Scan(&p.ID, &p.Name, &p.Host, &p.Model, &p.Enabled, &p.CreatedAt, &p.HealthStatus, &p.LastHealthCheck, &p.LastError, &p.Tags); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Host, &p.Model, &p.ProviderType, &p.Enabled, &p.CreatedAt, &p.HealthStatus, &p.LastHealthCheck, &p.LastError, &p.Tags); err != nil {
 			return nil, err
 		}
 		providers = append(providers, p)
@@ -52,11 +51,14 @@ func (q *Queries) CreateOllamaProvider(ctx context.Context, p *models.OllamaProv
 	if p.Tags == nil {
 		p.Tags = []string{}
 	}
+	if p.ProviderType == "" {
+		p.ProviderType = "ollama"
+	}
 	return q.pool.QueryRow(ctx, `
-		INSERT INTO ollama_providers (name, host, model, enabled, health_status, tags)
-		VALUES ($1, $2, $3, $4, 'unknown', $5)
+		INSERT INTO ollama_providers (name, host, model, provider_type, enabled, health_status, tags)
+		VALUES ($1, $2, $3, $4, $5, 'unknown', $6)
 		RETURNING id, created_at`,
-		p.Name, p.Host, p.Model, p.Enabled, pgtype.FlatArray[string](p.Tags),
+		p.Name, p.Host, p.Model, p.ProviderType, p.Enabled, pgtype.FlatArray[string](p.Tags),
 	).Scan(&p.ID, &p.CreatedAt)
 }
 
@@ -64,11 +66,14 @@ func (q *Queries) UpdateOllamaProvider(ctx context.Context, p *models.OllamaProv
 	if p.Tags == nil {
 		p.Tags = []string{}
 	}
+	if p.ProviderType == "" {
+		p.ProviderType = "ollama"
+	}
 	tag, err := q.pool.Exec(ctx, `
 		UPDATE ollama_providers
-		SET name = $2, host = $3, model = $4, enabled = $5, health_status = $6, last_error = $7, tags = $8
+		SET name = $2, host = $3, model = $4, provider_type = $5, enabled = $6, health_status = $7, last_error = $8, tags = $9
 		WHERE id = $1`,
-		p.ID, p.Name, p.Host, p.Model, p.Enabled, p.HealthStatus, p.LastError, pgtype.FlatArray[string](p.Tags))
+		p.ID, p.Name, p.Host, p.Model, p.ProviderType, p.Enabled, p.HealthStatus, p.LastError, pgtype.FlatArray[string](p.Tags))
 	if err != nil {
 		return err
 	}

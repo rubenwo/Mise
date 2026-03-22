@@ -12,9 +12,18 @@ import (
 	"time"
 )
 
+// ProviderType identifies which LLM API a provider speaks.
+type ProviderType string
+
+const (
+	ProviderTypeOllama       ProviderType = "ollama"
+	ProviderTypeOpenAICompat ProviderType = "openai_compat"
+)
+
 type Client struct {
 	baseURL      string
 	model        string
+	providerType ProviderType
 	httpClient   *http.Client
 	healthy      atomic.Bool
 	lastCheck    time.Time
@@ -22,10 +31,11 @@ type Client struct {
 	tags         []string
 }
 
-func NewClient(baseURL, model string, timeout time.Duration, providerID int, tags []string) *Client {
+func NewClient(baseURL, model string, providerType ProviderType, timeout time.Duration, providerID int, tags []string) *Client {
 	c := &Client{
-		baseURL: baseURL,
-		model:   model,
+		baseURL:      baseURL,
+		model:        model,
+		providerType: providerType,
 		httpClient: &http.Client{
 			Timeout: timeout,
 		},
@@ -46,13 +56,17 @@ func (c *Client) hasTag(tag string) bool {
 	return false
 }
 
+// Message is the shared message type for both Ollama and OpenAI-compat APIs.
 type Message struct {
-	Role      string     `json:"role"`
-	Content   string     `json:"content"`
-	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
+	Role       string     `json:"role"`
+	Content    string     `json:"content"`
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty"` // OpenAI-compat: correlates tool result to prior tool call
 }
 
+// ToolCall is the shared tool call type. ID is populated for OpenAI-compat responses.
 type ToolCall struct {
+	ID       string           `json:"id,omitempty"`
 	Function ToolCallFunction `json:"function"`
 }
 
@@ -61,7 +75,17 @@ type ToolCallFunction struct {
 	Arguments json.RawMessage `json:"arguments"`
 }
 
-type ChatRequest struct {
+// ChatResponse is the normalized response returned regardless of underlying provider.
+type ChatResponse struct {
+	Message       Message `json:"message"`
+	Done          bool    `json:"done"`
+	DoneReason    string  `json:"done_reason,omitempty"`
+	TotalDuration int64   `json:"total_duration,omitempty"`
+}
+
+// ---- Ollama-native wire types ----
+
+type ollamaChatRequest struct {
 	Model    string    `json:"model"`
 	Messages []Message `json:"messages"`
 	Tools    []Tool    `json:"tools,omitempty"`
@@ -69,15 +93,63 @@ type ChatRequest struct {
 	Format   string    `json:"format,omitempty"`
 }
 
-type ChatResponse struct {
-	Message      Message `json:"message"`
-	Done         bool    `json:"done"`
-	DoneReason   string  `json:"done_reason,omitempty"`
-	TotalDuration int64  `json:"total_duration,omitempty"`
+type ollamaChatResponse struct {
+	Message       Message `json:"message"`
+	Done          bool    `json:"done"`
+	DoneReason    string  `json:"done_reason,omitempty"`
+	TotalDuration int64   `json:"total_duration,omitempty"`
 }
 
+// ---- OpenAI-compat wire types ----
+
+type openAIChatRequest struct {
+	Model          string            `json:"model"`
+	Messages       []openAIMessage   `json:"messages"`
+	Tools          []Tool            `json:"tools,omitempty"`
+	Stream         bool              `json:"stream"`
+	ResponseFormat *openAIRespFormat `json:"response_format,omitempty"`
+}
+
+type openAIRespFormat struct {
+	Type string `json:"type"`
+}
+
+// openAIMessage mirrors the OpenAI wire format. Content is a pointer so it can
+// be null for assistant messages that only contain tool calls.
+type openAIMessage struct {
+	Role       string           `json:"role"`
+	Content    *string          `json:"content"`
+	ToolCalls  []openAIToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string           `json:"tool_call_id,omitempty"`
+}
+
+type openAIToolCall struct {
+	ID       string                 `json:"id"`
+	Type     string                 `json:"type"`
+	Function openAIToolCallFunction `json:"function"`
+}
+
+// openAIToolCallFunction uses a plain string for Arguments (JSON-encoded string,
+// not a raw JSON object like Ollama uses).
+type openAIToolCallFunction struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+type openAIChatResponse struct {
+	Choices []struct {
+		Message      openAIMessage `json:"message"`
+		FinishReason string        `json:"finish_reason"`
+	} `json:"choices"`
+}
+
+// ---- Public API ----
+
 func (c *Client) Chat(ctx context.Context, messages []Message, tools []Tool) (*ChatResponse, error) {
-	return c.doChat(ctx, ChatRequest{
+	if c.providerType == ProviderTypeOpenAICompat {
+		return c.doChatOpenAI(ctx, messages, tools, false)
+	}
+	return c.doChatOllama(ctx, ollamaChatRequest{
 		Model:    c.model,
 		Messages: messages,
 		Tools:    tools,
@@ -85,9 +157,12 @@ func (c *Client) Chat(ctx context.Context, messages []Message, tools []Tool) (*C
 	})
 }
 
-// ChatJSON calls the model requesting a JSON-formatted response (no tools, format:"json").
+// ChatJSON calls the model requesting a JSON-formatted response (no tools).
 func (c *Client) ChatJSON(ctx context.Context, messages []Message) (*ChatResponse, error) {
-	return c.doChat(ctx, ChatRequest{
+	if c.providerType == ProviderTypeOpenAICompat {
+		return c.doChatOpenAI(ctx, messages, nil, true)
+	}
+	return c.doChatOllama(ctx, ollamaChatRequest{
 		Model:    c.model,
 		Messages: messages,
 		Stream:   false,
@@ -95,7 +170,9 @@ func (c *Client) ChatJSON(ctx context.Context, messages []Message) (*ChatRespons
 	})
 }
 
-func (c *Client) doChat(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
+// ---- Ollama implementation ----
+
+func (c *Client) doChatOllama(ctx context.Context, req ollamaChatRequest) (*ChatResponse, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling request: %w", err)
@@ -118,15 +195,132 @@ func (c *Client) doChat(ctx context.Context, req ChatRequest) (*ChatResponse, er
 		return nil, fmt.Errorf("ollama returned %d: %s", resp.StatusCode, string(respBody))
 	}
 
-	var chatResp ChatResponse
-	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
+	var r ollamaChatResponse
+	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
 		return nil, fmt.Errorf("decoding response: %w", err)
 	}
 
-	return &chatResp, nil
+	return &ChatResponse{
+		Message:       r.Message,
+		Done:          r.Done,
+		DoneReason:    r.DoneReason,
+		TotalDuration: r.TotalDuration,
+	}, nil
 }
 
+// ---- OpenAI-compat implementation ----
+
+func (c *Client) doChatOpenAI(ctx context.Context, messages []Message, tools []Tool, jsonMode bool) (*ChatResponse, error) {
+	req := openAIChatRequest{
+		Model:    c.model,
+		Messages: toOpenAIMessages(messages),
+		Tools:    tools,
+		Stream:   false,
+	}
+	if jsonMode {
+		req.ResponseFormat = &openAIRespFormat{Type: "json_object"}
+	}
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/v1/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("calling openai-compat provider: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("provider returned %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var r openAIChatResponse
+	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+	if len(r.Choices) == 0 {
+		return nil, fmt.Errorf("provider returned no choices")
+	}
+
+	choice := r.Choices[0]
+	msg := fromOpenAIMessage(choice.Message)
+
+	return &ChatResponse{
+		Message:    msg,
+		Done:       choice.FinishReason != "",
+		DoneReason: choice.FinishReason,
+	}, nil
+}
+
+// toOpenAIMessages converts our internal Message slice to the OpenAI wire format.
+func toOpenAIMessages(messages []Message) []openAIMessage {
+	out := make([]openAIMessage, len(messages))
+	for i, m := range messages {
+		om := openAIMessage{
+			Role:       m.Role,
+			ToolCallID: m.ToolCallID,
+		}
+		// Assistant messages with only tool calls may have null content in OpenAI format.
+		if len(m.ToolCalls) > 0 && m.Content == "" {
+			om.Content = nil
+		} else {
+			s := m.Content
+			om.Content = &s
+		}
+		for _, tc := range m.ToolCalls {
+			om.ToolCalls = append(om.ToolCalls, openAIToolCall{
+				ID:   tc.ID,
+				Type: "function",
+				Function: openAIToolCallFunction{
+					Name:      tc.Function.Name,
+					Arguments: string(tc.Function.Arguments),
+				},
+			})
+		}
+		out[i] = om
+	}
+	return out
+}
+
+// fromOpenAIMessage converts an OpenAI response message to our internal Message type.
+func fromOpenAIMessage(om openAIMessage) Message {
+	content := ""
+	if om.Content != nil {
+		content = *om.Content
+	}
+	msg := Message{
+		Role:       om.Role,
+		Content:    content,
+		ToolCallID: om.ToolCallID,
+	}
+	for _, tc := range om.ToolCalls {
+		// OpenAI arguments is a JSON string; wrap it directly as json.RawMessage.
+		msg.ToolCalls = append(msg.ToolCalls, ToolCall{
+			ID: tc.ID,
+			Function: ToolCallFunction{
+				Name:      tc.Function.Name,
+				Arguments: json.RawMessage(tc.Function.Arguments),
+			},
+		})
+	}
+	return msg
+}
+
+// ---- Model management (Ollama-only) ----
+
 func (c *Client) EnsureModel(ctx context.Context) error {
+	if c.providerType != ProviderTypeOllama {
+		return nil // non-Ollama providers manage their own models
+	}
 	resp, err := http.Get(c.baseURL + "/api/tags")
 	if err != nil {
 		return fmt.Errorf("checking models: %w", err)
@@ -185,7 +379,14 @@ func (c *Client) Model() string {
 }
 
 func (c *Client) IsHealthy(ctx context.Context) bool {
-	resp, err := http.Get(c.baseURL + "/api/tags")
+	var url string
+	switch c.providerType {
+	case ProviderTypeOpenAICompat:
+		url = c.baseURL + "/v1/models"
+	default:
+		url = c.baseURL + "/api/tags"
+	}
+	resp, err := http.Get(url)
 	if err != nil {
 		return false
 	}

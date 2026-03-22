@@ -109,8 +109,9 @@ func (o *Orchestrator) GenerateWithTag(ctx context.Context, userPrompt string, e
 			}
 
 			messages = append(messages, Message{
-				Role:    "tool",
-				Content: result,
+				Role:       "tool",
+				ToolCallID: tc.ID,
+				Content:    result,
 			})
 		}
 	}
@@ -195,7 +196,7 @@ func (o *Orchestrator) CookingChat(ctx context.Context, systemContext string, hi
 				log.Printf("Tool %s failed: %v", tc.Function.Name, err)
 				result = fmt.Sprintf("Error: %v", err)
 			}
-			messages = append(messages, Message{Role: "tool", Content: result})
+			messages = append(messages, Message{Role: "tool", ToolCallID: tc.ID, Content: result})
 		}
 	}
 

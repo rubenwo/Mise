@@ -77,11 +77,12 @@ func main() {
 	provConfigs := make([]llm.ProviderConfig, len(providers))
 	for i, p := range providers {
 		provConfigs[i] = llm.ProviderConfig{
-			Host:       p.Host,
-			Model:      p.Model,
-			Timeout:    genTimeout,
-			ProviderID: p.ID,
-			Tags:       p.Tags,
+			Host:         p.Host,
+			Model:        p.Model,
+			ProviderType: llm.ProviderType(p.ProviderType),
+			Timeout:      genTimeout,
+			ProviderID:   p.ID,
+			Tags:         p.Tags,
 		}
 	}
 	clientPool := llm.NewClientPool(provConfigs)
