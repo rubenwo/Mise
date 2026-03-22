@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"log"
 	"math"
 	"math/rand/v2"
 	"net/http"
@@ -236,9 +237,11 @@ func (h *MealPlanHandler) OrderAH(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
+	log.Printf("OrderAH: plan id=%d", id)
 
 	ingredients, err := h.getPlanIngredients(r, id)
 	if err != nil {
+		log.Printf("OrderAH: getPlanIngredients error: %v", err)
 		if err == pgx.ErrNoRows {
 			writeError(w, http.StatusNotFound, "plan not found")
 			return
@@ -246,6 +249,7 @@ func (h *MealPlanHandler) OrderAH(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to get plan ingredients")
 		return
 	}
+	log.Printf("OrderAH: got %d ingredients", len(ingredients))
 
 	if len(ingredients) == 0 {
 		writeJSON(w, http.StatusOK, AHOrderResult{Matched: []AHMatchedIngredient{}, NotFound: []AggregatedIngredient{}})
