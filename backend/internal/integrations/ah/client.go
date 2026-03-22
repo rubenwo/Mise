@@ -108,6 +108,7 @@ func (c *Client) getToken() (string, error) {
 func (c *Client) SearchProduct(query string) (*Product, error) {
 	token, err := c.getToken()
 	if err != nil {
+		log.Printf("AH getToken failed: %v", err)
 		return nil, err
 	}
 
@@ -121,6 +122,7 @@ func (c *Client) SearchProduct(query string) (*Product, error) {
 
 	resp, err := c.http.Do(req)
 	if err != nil {
+		log.Printf("AH search http.Do failed for query=%q: %v", query, err)
 		return nil, fmt.Errorf("AH search request failed: %w", err)
 	}
 	defer resp.Body.Close()
