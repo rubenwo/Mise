@@ -13,9 +13,10 @@ import (
 )
 
 const (
-	baseURL   = "https://api.ah.nl"
-	userAgent = "Appie/8.22.3"
-	clientID  = "appie"
+	baseURL       = "https://api.ah.nl"
+	userAgent     = "Appie/9.28 (iPhone17,3; iPhone; CPU OS 26_1 like Mac OS X)"
+	clientID      = "appie-ios"
+	clientVersion = "9.28"
 )
 
 // Product represents a product found in the AH product catalog.
@@ -34,21 +35,18 @@ type tokenResponse struct {
 }
 
 type searchResponse struct {
-	Cards []struct {
-		Type     string `json:"type"`
-		Products []struct {
-			WebshopID string `json:"webshopId"`
-			Title     string `json:"title"`
-			Price     struct {
-				Now      float64 `json:"now"`
-				UnitSize string  `json:"unitSize"`
-			} `json:"price"`
-			Images []struct {
-				URL string `json:"url"`
-			} `json:"images"`
-			Link string `json:"link"`
-		} `json:"products"`
-	} `json:"cards"`
+	Products []struct {
+		WebshopID string `json:"webshopId"`
+		Title     string `json:"title"`
+		Price     struct {
+			Now      float64 `json:"now"`
+			UnitSize string  `json:"unitSize"`
+		} `json:"price"`
+		Images []struct {
+			URL string `json:"url"`
+		} `json:"images"`
+		Link string `json:"link"`
+	} `json:"products"`
 }
 
 // Client is a client for the Albert Heijn mobile API.
@@ -81,12 +79,15 @@ func (c *Client) getToken() (string, error) {
 	}
 
 	body, _ := json.Marshal(map[string]string{"clientId": clientID})
-	req, err := http.NewRequest("POST", baseURL+"/mobile/v1/session", bytes.NewReader(body))
+	req, err := http.NewRequest("POST", baseURL+"/mobile-auth/v1/auth/token/anonymous", bytes.NewReader(body))
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("x-client-name", clientID)
+	req.Header.Set("x-client-version", clientVersion)
+	req.Header.Set("x-application", "AHWEBSHOP")
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -121,13 +122,16 @@ func (c *Client) SearchProduct(query string) (*Product, error) {
 		return nil, err
 	}
 
-	reqURL := fmt.Sprintf("%s/mobile/v2/product/search?query=%s&size=5", baseURL, url.QueryEscape(query))
+	reqURL := fmt.Sprintf("%s/mobile-services/product/search/v2?query=%s&size=5&sortOn=RELEVANCE", baseURL, url.QueryEscape(query))
 	req, err := http.NewRequest("GET", reqURL, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("x-client-name", clientID)
+	req.Header.Set("x-client-version", clientVersion)
+	req.Header.Set("x-application", "AHWEBSHOP")
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -158,25 +162,21 @@ func (c *Client) SearchProduct(query string) (*Product, error) {
 		return nil, fmt.Errorf("failed to decode AH search response: %w", err)
 	}
 
-	for _, card := range sr.Cards {
-		log.Printf("AH card type=%q products=%d", card.Type, len(card.Products))
-		if card.Type == "default" && len(card.Products) > 0 {
-			p := card.Products[0]
-			imageURL := ""
-			if len(p.Images) > 0 {
-				imageURL = p.Images[0].URL
-			}
-			return &Product{
-				ID:       p.WebshopID,
-				Title:    p.Title,
-				Price:    p.Price.Now,
-				UnitSize: p.Price.UnitSize,
-				ImageURL: imageURL,
-				URL:      "https://www.ah.nl" + p.Link,
-			}, nil
-		}
+	if len(sr.Products) == 0 {
+		return nil, nil
 	}
 
-	// No matching product found
-	return nil, nil
+	p := sr.Products[0]
+	imageURL := ""
+	if len(p.Images) > 0 {
+		imageURL = p.Images[0].URL
+	}
+	return &Product{
+		ID:       p.WebshopID,
+		Title:    p.Title,
+		Price:    p.Price.Now,
+		UnitSize: p.Price.UnitSize,
+		ImageURL: imageURL,
+		URL:      "https://www.ah.nl" + p.Link,
+	}, nil
 }
