@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -137,6 +138,7 @@ type ImageSearcher struct {
 }
 
 func NewImageSearcher(timeout time.Duration, imagesDir string) *ImageSearcher {
+	jar, _ := cookiejar.New(nil) // allows DDG session cookies to flow from VQD fetch to image API
 	transport := &http.Transport{
 		DialContext:         safeDialContext,
 		DisableKeepAlives:   true,
@@ -146,6 +148,7 @@ func NewImageSearcher(timeout time.Duration, imagesDir string) *ImageSearcher {
 	client := &http.Client{
 		Timeout:   timeout,
 		Transport: transport,
+		Jar:       jar,
 		// Validate redirect targets so an open redirect can't bypass SSRF checks.
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 5 {
