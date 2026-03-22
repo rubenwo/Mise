@@ -125,6 +125,12 @@ func (c *Client) SearchProduct(query string) (*Product, error) {
 	}
 	defer resp.Body.Close()
 
+	rawBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read AH search response body: %w", err)
+	}
+	log.Printf("AH search query=%q status=%d body=%s", query, resp.StatusCode, string(rawBody))
+
 	// A 401 means our token expired; reset so the next call re-authenticates.
 	if resp.StatusCode == http.StatusUnauthorized {
 		c.mu.Lock()
@@ -135,12 +141,6 @@ func (c *Client) SearchProduct(query string) (*Product, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("AH search failed with status %d", resp.StatusCode)
 	}
-
-	rawBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read AH search response body: %w", err)
-	}
-	log.Printf("AH search query=%q status=%d body=%s", query, resp.StatusCode, string(rawBody))
 
 	var sr searchResponse
 	if err := json.Unmarshal(rawBody, &sr); err != nil {
