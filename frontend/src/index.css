@@ -59,11 +59,15 @@ body {
 
 .logo {
   font-family: var(--font-display);
-  font-size: 24px;
-  font-weight: 700;
+  font-size: 22px;
+  font-weight: 600;
+  font-style: italic;
   color: #ffffff;
   text-decoration: none;
-  letter-spacing: -0.3px;
+  letter-spacing: 0.3px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
 }
 
 .nav { display: flex; gap: 2px; }
