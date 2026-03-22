@@ -400,6 +400,31 @@ func (q *Queries) LibrarySearch(ctx context.Context, req LibrarySearchRequest) (
 	return recipes, err
 }
 
+// RecipeDedup holds the minimal data needed for duplicate detection.
+type RecipeDedup struct {
+	ID          int
+	Title       string
+	Description string
+}
+
+func (q *Queries) ListRecipesForDedup(ctx context.Context) ([]RecipeDedup, error) {
+	rows, err := q.pool.Query(ctx, "SELECT id, title, description FROM recipes ORDER BY id")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []RecipeDedup
+	for rows.Next() {
+		var r RecipeDedup
+		if err := rows.Scan(&r.ID, &r.Title, &r.Description); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 func (q *Queries) CreateGenerationChat(ctx context.Context, prompt, model string, messagesJSON []byte) error {
 	_, err := q.pool.Exec(ctx, `
 		INSERT INTO generation_chats (prompt, model, messages) VALUES ($1, $2, $3)`,

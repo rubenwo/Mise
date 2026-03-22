@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -435,6 +436,157 @@ func selectSuggestedIDs(meta []database.RecipeMeta, count int, now time.Time) []
 		}
 	}
 	return picked
+}
+
+// FindDuplicates scans all recipes and returns groups of likely duplicates,
+// identified by comparing normalised titles and descriptions without an LLM.
+func (h *RecipeHandler) FindDuplicates(w http.ResponseWriter, r *http.Request) {
+	stubs, err := h.queries.ListRecipesForDedup(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list recipes")
+		return
+	}
+
+	n := len(stubs)
+	parent := make([]int, n)
+	for i := range parent {
+		parent[i] = i
+	}
+	var find func(int) int
+	find = func(x int) int {
+		if parent[x] != x {
+			parent[x] = find(parent[x])
+		}
+		return parent[x]
+	}
+	union := func(x, y int) { parent[find(x)] = find(y) }
+
+	const threshold = 0.60
+	for i := 0; i < n; i++ {
+		for j := i + 1; j < n; j++ {
+			if recipeSimilarity(stubs[i], stubs[j]) >= threshold {
+				union(i, j)
+			}
+		}
+	}
+
+	// Group indices by their root.
+	groups := map[int][]int{}
+	for i := 0; i < n; i++ {
+		root := find(i)
+		groups[root] = append(groups[root], i)
+	}
+
+	// For each group with ≥2 members, collect full recipe data.
+	var dupGroups [][]models.Recipe
+	for _, indices := range groups {
+		if len(indices) < 2 {
+			continue
+		}
+		ids := make([]int, len(indices))
+		for k, idx := range indices {
+			ids[k] = stubs[idx].ID
+		}
+		full, err := h.queries.GetRecipesByIDs(r.Context(), ids)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to fetch duplicate recipes")
+			return
+		}
+		dupGroups = append(dupGroups, full)
+	}
+
+	if dupGroups == nil {
+		dupGroups = [][]models.Recipe{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"groups": dupGroups})
+}
+
+// recipeSimilarity returns a score in [0,1] combining title and description
+// similarity. Title is weighted more heavily (80 %).
+func recipeSimilarity(a, b database.RecipeDedup) float64 {
+	t1 := dedupNormalize(a.Title)
+	t2 := dedupNormalize(b.Title)
+	d1 := dedupNormalize(a.Description)
+	d2 := dedupNormalize(b.Description)
+
+	titleScore := math.Max(jaccardWords(t1, t2), jaccardBigrams(t1, t2))
+	descScore := jaccardWords(d1, d2)
+	return 0.80*titleScore + 0.20*descScore
+}
+
+// dedupNormalize lowercases s, replaces non-alphanumeric runes with spaces,
+// and collapses runs of spaces.
+func dedupNormalize(s string) string {
+	var b strings.Builder
+	for _, ch := range strings.ToLower(s) {
+		if (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') {
+			b.WriteRune(ch)
+		} else {
+			b.WriteRune(' ')
+		}
+	}
+	return strings.Join(strings.Fields(b.String()), " ")
+}
+
+// jaccardWords returns the Jaccard similarity of the word sets of a and b,
+// ignoring tokens shorter than 3 characters (articles, prepositions, etc.).
+func jaccardWords(a, b string) float64 {
+	sa := wordSet(a)
+	sb := wordSet(b)
+	if len(sa) == 0 && len(sb) == 0 {
+		return 1.0
+	}
+	intersection := 0
+	for w := range sa {
+		if _, ok := sb[w]; ok {
+			intersection++
+		}
+	}
+	union := len(sa) + len(sb) - intersection
+	if union == 0 {
+		return 0
+	}
+	return float64(intersection) / float64(union)
+}
+
+func wordSet(s string) map[string]struct{} {
+	set := map[string]struct{}{}
+	for _, w := range strings.Fields(s) {
+		if len(w) >= 3 {
+			set[w] = struct{}{}
+		}
+	}
+	return set
+}
+
+// jaccardBigrams returns the Jaccard similarity of character-bigram sets,
+// which handles minor spelling variations and word-order differences.
+func jaccardBigrams(a, b string) float64 {
+	sa := bigramSet(a)
+	sb := bigramSet(b)
+	if len(sa) == 0 && len(sb) == 0 {
+		return 1.0
+	}
+	intersection := 0
+	for k := range sa {
+		if _, ok := sb[k]; ok {
+			intersection++
+		}
+	}
+	union := len(sa) + len(sb) - intersection
+	if union == 0 {
+		return 0
+	}
+	return float64(intersection) / float64(union)
+}
+
+func bigramSet(s string) map[string]struct{} {
+	set := map[string]struct{}{}
+	runes := []rune(s)
+	for i := 0; i+1 < len(runes); i++ {
+		set[string(runes[i:i+2])] = struct{}{}
+	}
+	return set
 }
 
 func writeJSON(w http.ResponseWriter, status int, data any) {

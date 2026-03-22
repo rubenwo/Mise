@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import RecipeCard from '../components/RecipeCard';
 import RecipeList from '../components/RecipeList';
+import DuplicatesModal from '../components/DuplicatesModal';
 import { useRecipes } from '../hooks/useRecipes';
 import { filterRecipes } from '../utils/fuzzyMatch';
-import { aiSearchRecipes, getRecipeSuggestions, getSettings } from '../api/client';
+import { aiSearchRecipes, findDuplicates, getRecipeSuggestions, getSettings } from '../api/client';
 
 const CUISINE_COLORS = [
   '#c2410c', '#0d9488', '#7c3aed', '#b45309',
@@ -88,6 +89,8 @@ export default function LibraryPage() {
   const [aiError, setAiError] = useState(null);
   const [expandedCuisines, setExpandedCuisines] = useState(new Set());
   const [suggestionCount, setSuggestionCount] = useState(3);
+  const [dedupState, setDedupState] = useState(null); // null | 'loading' | { groups }
+
 
   useEffect(() => {
     getSettings()
@@ -127,6 +130,26 @@ export default function LibraryPage() {
     setAiLoading(false);
   };
 
+  const handleFindDuplicates = () => {
+    setDedupState('loading');
+    findDuplicates()
+      .then(data => setDedupState({ groups: data.groups || [] }))
+      .catch(err => { alert('Failed to find duplicates: ' + err.message); setDedupState(null); });
+  };
+
+  const handleDedupDeleted = (ids) => {
+    const idSet = new Set(ids);
+    ids.forEach(id => remove(id));
+    // Remove deleted recipes from all groups, then drop now-empty / singleton groups.
+    setDedupState(prev => {
+      if (!prev || !prev.groups) return null;
+      const groups = prev.groups
+        .map(g => g.filter(r => !idSet.has(r.id)))
+        .filter(g => g.length >= 2);
+      return { groups };
+    });
+  };
+
   const fuzzyFiltered = filterRecipes(query, recipes);
 
   const cuisineGroups = useMemo(() => {
@@ -157,7 +180,23 @@ export default function LibraryPage() {
 
   return (
     <div className="library-page">
-      <h2>Recipe Library</h2>
+      <div className="library-page-header">
+        <h2>Recipe Library</h2>
+        <button
+          className="btn btn-secondary"
+          onClick={handleFindDuplicates}
+          disabled={dedupState === 'loading' || total === 0}
+        >
+          {dedupState === 'loading' ? 'Scanning…' : 'Find Duplicates'}
+        </button>
+      </div>
+      {dedupState && dedupState !== 'loading' && (
+        <DuplicatesModal
+          groups={dedupState.groups}
+          onClose={() => setDedupState(null)}
+          onDeleted={handleDedupDeleted}
+        />
+      )}
       <div className="search-bar">
         <input
           type="text"

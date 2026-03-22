@@ -1004,6 +1004,32 @@ a, button, input, select, textarea { transition: all 0.15s ease; }
 .recipe-edit-trigger { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
 
 /* ── Modal ────────────────────────────────────────────── */
+/* ── Library page header ──────────────────────────────── */
+.library-page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.library-page-header h2 { margin: 0; }
+
+/* ── Duplicates modal ─────────────────────────────────── */
+.modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.dedup-modal { background: var(--surface); border-radius: 10px; box-shadow: 0 8px 32px rgba(0,0,0,0.22); width: 100%; max-width: 900px; max-height: 88vh; display: flex; flex-direction: column; overflow: hidden; }
+.dedup-modal-body { padding: 20px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 24px; }
+.dedup-modal-hint { font-size: 13px; color: var(--text-secondary); margin: 0 0 4px; }
+.dedup-group { display: flex; flex-direction: column; gap: 10px; }
+.dedup-group-label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.dedup-group-cards { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 4px; }
+.dedup-card { flex: 0 0 220px; border: 2px solid var(--border); border-radius: 10px; overflow: hidden; cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s; display: flex; flex-direction: column; background: var(--surface); }
+.dedup-card:hover { border-color: var(--primary); box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+.dedup-card--selected { border-color: var(--danger); }
+.dedup-card-img { width: 100%; height: 120px; object-fit: cover; }
+.dedup-card-body { padding: 10px 12px; flex: 1; display: flex; flex-direction: column; gap: 6px; }
+.dedup-card-title { font-size: 14px; font-weight: 600; line-height: 1.3; }
+.dedup-card-desc { font-size: 12px; color: var(--text-secondary); margin: 0; line-height: 1.4; }
+.dedup-card-meta { display: flex; flex-wrap: wrap; gap: 4px; }
+.dedup-card-ingredients { font-size: 11px; color: var(--text-muted); margin: 0; }
+.dedup-card-date { font-size: 11px; color: var(--text-muted); margin: 0; margin-top: auto; padding-top: 4px; }
+.dedup-card-checkbox { padding: 8px 12px; font-size: 12px; font-weight: 600; text-align: center; background: var(--bg); color: var(--text-secondary); transition: background 0.15s, color 0.15s; }
+.dedup-card--selected .dedup-card-checkbox { background: var(--danger); color: #fff; }
+.dedup-modal .modal-footer { padding: 16px 20px; margin-top: 0; }
+
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; }
 .modal { background: var(--surface); border-radius: 10px; box-shadow: 0 8px 32px rgba(0,0,0,0.18); width: 100%; max-width: 600px; max-height: 85vh; display: flex; flex-direction: column; overflow: hidden; }
 .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px 14px; border-bottom: 1px solid var(--border); }

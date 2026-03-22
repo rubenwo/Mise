@@ -198,6 +198,10 @@ export function sendChatMessage(recipeId, message) {
   });
 }
 
+export function findDuplicates() {
+  return request('/recipes/duplicates');
+}
+
 export function generateStream(endpoint, body) {
   return fetch(`${API_BASE}/generate/${endpoint}`, {
     method: 'POST',
