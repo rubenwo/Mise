@@ -132,10 +132,13 @@ var allowedSettingKeys = map[string]struct{}{
 	"ui_language":         {},
 	// Background generation settings
 	"background_generation_enabled":     {},
-	"background_generation_interval":    {},
+	"background_generation_days":        {},
+	"background_generation_time":        {},
 	"background_generation_count":       {},
 	"background_generation_max_retries": {},
-	"background_generation_time":        {},
+	// Legacy key — no longer used by the scheduler but kept so existing DB rows
+	// are not rejected if they are re-submitted by an old client.
+	"background_generation_interval": {},
 }
 
 func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {

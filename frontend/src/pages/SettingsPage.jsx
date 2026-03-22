@@ -259,13 +259,33 @@ function ProvidersSection() {
   );
 }
 
+// Weekday order for display: Mon–Sun. Values match Go's time.Weekday (0=Sunday).
+const WEEKDAYS = [
+  { label: 'Mon', value: '1' },
+  { label: 'Tue', value: '2' },
+  { label: 'Wed', value: '3' },
+  { label: 'Thu', value: '4' },
+  { label: 'Fri', value: '5' },
+  { label: 'Sat', value: '6' },
+  { label: 'Sun', value: '0' },
+];
+
+function parseDays(val) {
+  if (!val) return new Set();
+  return new Set(val.split(',').map(d => d.trim()).filter(Boolean));
+}
+
+function serializeDays(set) {
+  return [...set].join(',');
+}
+
 function BackgroundGenerationSettings() {
   const [settings, setSettings] = useState({
     background_generation_enabled: 'false',
-    background_generation_interval: '86400',
+    background_generation_days: '1,2,3,4,5',
+    background_generation_time: '08:00',
     background_generation_count: '1',
     background_generation_max_retries: '3',
-    background_generation_time: '',
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -284,10 +304,10 @@ function BackgroundGenerationSettings() {
     try {
       await updateSettings({
         background_generation_enabled: settings.background_generation_enabled,
-        background_generation_interval: settings.background_generation_interval,
+        background_generation_days: settings.background_generation_days,
+        background_generation_time: settings.background_generation_time,
         background_generation_count: settings.background_generation_count,
         background_generation_max_retries: settings.background_generation_max_retries,
-        background_generation_time: settings.background_generation_time,
       });
     } catch (err) {
       alert('Failed to save: ' + err.message);
@@ -299,23 +319,21 @@ function BackgroundGenerationSettings() {
   if (loading) return null;
 
   const enabled = settings.background_generation_enabled === 'true';
-  const intervals = [
-    { label: '30 minutes', value: '1800' },
-    { label: '1 hour', value: '3600' },
-    { label: '2 hours', value: '7200' },
-    { label: '6 hours', value: '21600' },
-    { label: '12 hours', value: '43200' },
-    { label: '24 hours', value: '86400' },
-    { label: '2 days', value: '172800' },
-    { label: '1 week', value: '604800' },
-  ];
+  const selectedDays = parseDays(settings.background_generation_days);
+
+  const toggleDay = (value) => {
+    const next = new Set(selectedDays);
+    if (next.has(value)) next.delete(value);
+    else next.add(value);
+    setSettings(s => ({ ...s, background_generation_days: serializeDays(next) }));
+  };
 
   return (
     <div className="settings-section">
       <h3>Background Generation</h3>
       <p className="settings-description">
-        Automatically generate recipes on a schedule. Use the <code>background</code> tag on a provider (e.g. your always-on server)
-        to prefer it for background tasks.
+        Automatically generate recipes on a cron-like schedule. Use the <code>background</code> tag on a provider
+        (e.g. your always-on server) to prefer it for background tasks.
       </p>
       <div className="settings-form">
         <div className="settings-field">
@@ -332,14 +350,21 @@ function BackgroundGenerationSettings() {
         {enabled && (
           <>
             <div className="settings-field">
-              <label>Interval</label>
-              <select
-                value={settings.background_generation_interval}
-                onChange={e => setSettings(s => ({ ...s, background_generation_interval: e.target.value }))}
-              >
-                {intervals.map(i => <option key={i.value} value={i.value}>{i.label}</option>)}
-              </select>
-              <span className="settings-hint">Minimum time between runs</span>
+              <label>Days</label>
+              <div className="day-picker">
+                {WEEKDAYS.map(d => (
+                  <label key={d.value} className={`day-chip ${selectedDays.has(d.value) ? 'day-chip-active' : ''}`}>
+                    <input
+                      type="checkbox"
+                      checked={selectedDays.has(d.value)}
+                      onChange={() => toggleDay(d.value)}
+                      style={{ display: 'none' }}
+                    />
+                    {d.label}
+                  </label>
+                ))}
+              </div>
+              <span className="settings-hint">Days of the week to run generation</span>
             </div>
             <div className="settings-field">
               <label>Time of day</label>
@@ -347,10 +372,9 @@ function BackgroundGenerationSettings() {
                 type="time"
                 value={settings.background_generation_time}
                 onChange={e => setSettings(s => ({ ...s, background_generation_time: e.target.value }))}
+                required
               />
-              <span className="settings-hint">
-                Only generate at this time of day (leave empty to run as soon as the interval elapses)
-              </span>
+              <span className="settings-hint">Time to run generation on selected days</span>
             </div>
             <div className="settings-field">
               <label>Recipes per run</label>
@@ -361,7 +385,7 @@ function BackgroundGenerationSettings() {
                 value={settings.background_generation_count}
                 onChange={e => setSettings(s => ({ ...s, background_generation_count: e.target.value }))}
               />
-              <span className="settings-hint">Number of recipes generated each interval</span>
+              <span className="settings-hint">Number of recipes generated each run</span>
             </div>
             <div className="settings-field">
               <label>Max retries on invalid JSON</label>

@@ -978,6 +978,12 @@ a, button, input, select, textarea { transition: all 0.15s ease; }
 .tag-picker-input-row select,
 .tag-picker-input-row input { flex: 1; padding: 6px 10px; border: 1px solid var(--border); border-radius: 7px; font-family: var(--font-body); font-size: 12px; background: var(--surface); }
 
+/* ── Day Picker ───────────────────────────────────────── */
+.day-picker { display: flex; flex-wrap: wrap; gap: 6px; }
+.day-chip { display: inline-flex; align-items: center; justify-content: center; min-width: 40px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text-muted); font-size: 12px; font-weight: 500; cursor: pointer; user-select: none; transition: background 0.15s, color 0.15s, border-color 0.15s; }
+.day-chip-active { background: var(--primary); border-color: var(--primary); color: #fff; }
+.day-chip:hover:not(.day-chip-active) { border-color: var(--primary); color: var(--primary); }
+
 /* ── Recipe Edit Form ─────────────────────────────────── */
 .recipe-edit-form { padding: 24px 28px 28px; border-top: 1px solid var(--border); }
 .recipe-edit-section { margin-bottom: 24px; }
