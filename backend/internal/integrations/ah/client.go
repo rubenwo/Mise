@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"sync"
@@ -115,7 +113,6 @@ func (c *Client) getToken() (string, error) {
 func (c *Client) SearchProduct(query string) (*Product, error) {
 	token, err := c.getToken()
 	if err != nil {
-		log.Printf("AH getToken failed: %v", err)
 		return nil, err
 	}
 
@@ -132,16 +129,9 @@ func (c *Client) SearchProduct(query string) (*Product, error) {
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		log.Printf("AH search http.Do failed for query=%q: %v", query, err)
 		return nil, fmt.Errorf("AH search request failed: %w", err)
 	}
 	defer resp.Body.Close()
-
-	rawBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read AH search response body: %w", err)
-	}
-	log.Printf("AH search query=%q status=%d body=%s", query, resp.StatusCode, string(rawBody))
 
 	// A 401 means our token expired; reset so the next call re-authenticates.
 	if resp.StatusCode == http.StatusUnauthorized {
@@ -155,7 +145,7 @@ func (c *Client) SearchProduct(query string) (*Product, error) {
 	}
 
 	var sr searchResponse
-	if err := json.Unmarshal(rawBody, &sr); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&sr); err != nil {
 		return nil, fmt.Errorf("failed to decode AH search response: %w", err)
 	}
 
