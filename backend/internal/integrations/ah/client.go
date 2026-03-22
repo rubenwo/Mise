@@ -53,10 +53,12 @@ type searchResponse struct {
 
 // Client is a client for the Albert Heijn mobile API.
 type Client struct {
-	http     *http.Client
-	mu       sync.Mutex
-	token    string
-	tokenExp time.Time
+	http        *http.Client
+	mu          sync.Mutex
+	token       string
+	tokenExp    time.Time
+	authErr     error
+	authErrTime time.Time
 }
 
 // NewClient returns a new AH API client.
@@ -73,9 +75,13 @@ func (c *Client) getToken() (string, error) {
 	if c.token != "" && time.Now().Before(c.tokenExp) {
 		return c.token, nil
 	}
+	// Return cached auth error for 30s to avoid hammering a broken endpoint.
+	if c.authErr != nil && time.Now().Before(c.authErrTime.Add(30*time.Second)) {
+		return "", c.authErr
+	}
 
 	body, _ := json.Marshal(map[string]string{"clientId": clientID})
-	req, err := http.NewRequest("POST", baseURL+"/mobile/v4/session", bytes.NewReader(body))
+	req, err := http.NewRequest("POST", baseURL+"/mobile/v1/session", bytes.NewReader(body))
 	if err != nil {
 		return "", err
 	}
@@ -89,8 +95,11 @@ func (c *Client) getToken() (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return "", fmt.Errorf("AH auth failed with status %d", resp.StatusCode)
+		c.authErr = fmt.Errorf("AH auth failed with status %d", resp.StatusCode)
+		c.authErrTime = time.Now()
+		return "", c.authErr
 	}
+	c.authErr = nil
 
 	var tr tokenResponse
 	if err := json.NewDecoder(resp.Body).Decode(&tr); err != nil {
