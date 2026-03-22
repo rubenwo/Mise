@@ -47,41 +47,41 @@ func (p *ClientPool) Reload(providers []ProviderConfig) {
 	p.buildClients(providers)
 }
 
+// Acquire returns any healthy client that is not exclusively a translation model.
+// Use AcquireWithTag("translation") to explicitly target translation clients.
 func (p *ClientPool) Acquire() *Client {
-	return p.AcquireWithTag("")
-}
-
-func (p *ClientPool) AcquireWithTag(tag string) *Client {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if len(p.clients) == 0 {
-		return nil
-	}
-
-	// First pass: prefer clients with the requested tag (if any).
-	if tag != "" {
-		startIdx := p.next
-		for i := 0; i < len(p.clients); i++ {
-			idx := (startIdx + i) % len(p.clients)
-			c := p.clients[idx]
-			if c.healthy.Load() && c.hasTag(tag) {
-				p.next = idx + 1
-				return c
-			}
-		}
-	}
-
-	// Second pass (or no tag): any healthy client in round-robin order.
 	startIdx := p.next
 	for i := 0; i < len(p.clients); i++ {
 		idx := (startIdx + i) % len(p.clients)
 		c := p.clients[idx]
-		if c.healthy.Load() {
+		if c.healthy.Load() && !c.hasTag("translation") {
 			p.next = idx + 1
 			return c
 		}
 	}
+	return nil
+}
 
+// AcquireWithTag returns a healthy client that has the given tag.
+// If tag is empty it delegates to Acquire (any non-translation client).
+// No fallback: if no client with the requested tag is healthy, nil is returned.
+func (p *ClientPool) AcquireWithTag(tag string) *Client {
+	if tag == "" {
+		return p.Acquire()
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	startIdx := p.next
+	for i := 0; i < len(p.clients); i++ {
+		idx := (startIdx + i) % len(p.clients)
+		c := p.clients[idx]
+		if c.healthy.Load() && c.hasTag(tag) {
+			p.next = idx + 1
+			return c
+		}
+	}
 	return nil
 }
 

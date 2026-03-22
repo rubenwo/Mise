@@ -31,7 +31,9 @@
       "Bash(git commit:*)",
       "Bash(git push:*)",
       "Bash(/tmp/analysis.txt:*)",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(grep -r \"i18n\\\\|i18next\\\\|translation\\\\|locale\\\\|lang\" C:UsersdiablDocumentsMise --include=*.json --include=*.yaml --include=*.go --include=*.jsx --include=*.ts)",
+      "Bash(grep -r \"Albert Heijn\\\\|ah\\\\|AH\" C:UsersdiablDocumentsMise --include=*.jsx --include=*.go)"
     ]
   }
 }
