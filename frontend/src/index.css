@@ -1007,3 +1007,59 @@ a, button, input, select, textarea { transition: all 0.15s ease; }
 .ah-product-sub { display: block; font-size: 11px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ah-product-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
 .ah-product-price { font-size: 13px; font-weight: 700; color: var(--primary); }
+
+/* ── Cooking Chat ─────────────────────────────────────── */
+.cooking-chat { border-top: 1px solid var(--border); padding: 24px 28px 28px; }
+.cooking-chat h3 { font-family: var(--font-display); font-size: 18px; font-weight: 700; color: var(--text); margin-bottom: 16px; }
+
+.chat-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+  scroll-behavior: smooth;
+}
+
+.chat-empty { font-size: 13px; color: var(--text-secondary); font-style: italic; text-align: center; padding: 16px 0; }
+
+.chat-message { display: flex; flex-direction: column; max-width: 80%; gap: 3px; }
+.chat-message-user { align-self: flex-end; align-items: flex-end; }
+.chat-message-assistant { align-self: flex-start; align-items: flex-start; }
+
+.chat-role { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); padding: 0 4px; }
+
+.chat-message p {
+  margin: 0;
+  padding: 9px 13px;
+  border-radius: 14px;
+  font-size: 14px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.chat-message-user p { background: var(--primary); color: #fff; border-bottom-right-radius: 4px; }
+.chat-message-assistant p { background: var(--surface); border: 1px solid var(--border); color: var(--text); border-bottom-left-radius: 4px; }
+
+.chat-thinking { color: var(--text-secondary) !important; font-style: italic; }
+
+.chat-input-form { display: flex; gap: 8px; }
+.chat-input {
+  flex: 1;
+  padding: 9px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  background: var(--surface);
+  color: var(--text);
+  transition: border-color 0.15s;
+}
+.chat-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px rgba(181,69,27,0.1); }
+.chat-input:disabled { opacity: 0.6; }
+.chat-input-form .btn { flex-shrink: 0; }

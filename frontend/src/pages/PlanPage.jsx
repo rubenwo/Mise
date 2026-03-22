@@ -8,6 +8,7 @@ import {
 } from '../api/client';
 import RecipeCard from '../components/RecipeCard';
 import AHOrderModal from '../components/AHOrderModal';
+import CookingChat from '../components/CookingChat';
 import { filterRecipes } from '../utils/fuzzyMatch';
 
 function BrowseRecipeCard({ recipe, servings, onServingsChange, onAdd, adding }) {
@@ -535,6 +536,7 @@ function ActivePlanView({ plan, onComplete, onEnd, completedCount }) {
         >
           {current.completed ? 'Mark as Not Done' : 'Mark as Done'}
         </button>
+        <CookingChat key={current.recipe_id} recipeId={current.recipe_id} />
       </div>
 
       {completedCount === total && (
