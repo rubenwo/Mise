@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import RecipeCard from '../components/RecipeCard';
 import RecipeList from '../components/RecipeList';
 import { useRecipes } from '../hooks/useRecipes';
 import { filterRecipes } from '../utils/fuzzyMatch';
-import { getRecipeSuggestions, getSettings } from '../api/client';
+import { aiSearchRecipes, getRecipeSuggestions, getSettings } from '../api/client';
 
 const CUISINE_COLORS = [
   '#c2410c', '#0d9488', '#7c3aed', '#b45309',
@@ -82,8 +82,13 @@ function SuggestedCarousel({ count }) {
 export default function LibraryPage() {
   const { recipes, total, loading, error, remove } = useRecipes();
   const [query, setQuery] = useState('');
+  const [searchMode, setSearchMode] = useState('fuzzy'); // 'fuzzy' | 'ai'
+  const [aiResults, setAiResults] = useState(null); // { recipes, total, interpreted } | null
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState(null);
   const [expandedCuisines, setExpandedCuisines] = useState(new Set());
   const [suggestionCount, setSuggestionCount] = useState(3);
+  const aiDebounceRef = useRef(null);
 
   useEffect(() => {
     getSettings()
@@ -95,7 +100,44 @@ export default function LibraryPage() {
       .catch(() => {});
   }, []);
 
-  const filtered = filterRecipes(query, recipes);
+  // Trigger AI search with debounce when in AI mode
+  useEffect(() => {
+    if (searchMode !== 'ai') return;
+    if (aiDebounceRef.current) clearTimeout(aiDebounceRef.current);
+
+    if (!query.trim()) {
+      setAiResults(null);
+      setAiError(null);
+      return;
+    }
+
+    setAiLoading(true);
+    setAiError(null);
+    aiDebounceRef.current = setTimeout(() => {
+      aiSearchRecipes(query.trim())
+        .then(data => {
+          setAiResults(data);
+          setAiLoading(false);
+        })
+        .catch(err => {
+          setAiError(err.message || 'AI search failed');
+          setAiLoading(false);
+        });
+    }, 500);
+
+    return () => clearTimeout(aiDebounceRef.current);
+  }, [query, searchMode]);
+
+  // Reset AI state when switching modes
+  const handleModeChange = (mode) => {
+    setSearchMode(mode);
+    setAiResults(null);
+    setAiError(null);
+    setAiLoading(false);
+    if (aiDebounceRef.current) clearTimeout(aiDebounceRef.current);
+  };
+
+  const fuzzyFiltered = filterRecipes(query, recipes);
 
   const cuisineGroups = useMemo(() => {
     const groups = {};
@@ -118,7 +160,10 @@ export default function LibraryPage() {
     });
   };
 
-  const displayCount = query ? filtered.length : total;
+  const isSearching = query.trim().length > 0;
+  const fuzzyCount = fuzzyFiltered.length;
+  const aiCount = aiResults ? aiResults.total : 0;
+  const displayCount = searchMode === 'ai' ? aiCount : (isSearching ? fuzzyCount : total);
 
   return (
     <div className="library-page">
@@ -126,24 +171,69 @@ export default function LibraryPage() {
       <div className="search-bar">
         <input
           type="text"
-          placeholder="Search recipes..."
+          placeholder={searchMode === 'ai' ? 'Describe what you\'re looking for...' : 'Search recipes...'}
           value={query}
           onChange={e => setQuery(e.target.value)}
         />
       </div>
+      <div className="mode-toggle">
+        <button
+          className={searchMode === 'fuzzy' ? 'active' : ''}
+          onClick={() => handleModeChange('fuzzy')}
+        >
+          Keyword
+        </button>
+        <button
+          className={searchMode === 'ai' ? 'active' : ''}
+          onClick={() => handleModeChange('ai')}
+        >
+          AI Search
+        </button>
+      </div>
       {total > 0 && (
         <p className="total-count">
-          {query ? `${filtered.length} of ${total}` : total} recipe{displayCount !== 1 ? 's' : ''}
+          {isSearching
+            ? `${displayCount} of ${total}`
+            : total} recipe{displayCount !== 1 ? 's' : ''}
+          {aiLoading && ' · searching...'}
         </p>
       )}
-      {error && <div className="error-message">{error}</div>}
-      {!query && !loading && total >= suggestionCount && (
+      {(error || aiError) && <div className="error-message">{error || aiError}</div>}
+      {searchMode === 'ai' && aiResults?.interpreted && isSearching && (
+        <p className="total-count" style={{ marginBottom: 12 }}>
+          {[
+            aiResults.interpreted.query && `"${aiResults.interpreted.query}"`,
+            aiResults.interpreted.cuisine_type && aiResults.interpreted.cuisine_type,
+            ...(aiResults.interpreted.dietary_restrictions || []),
+            ...(aiResults.interpreted.tags || []),
+            aiResults.interpreted.max_total_minutes > 0 && `≤${aiResults.interpreted.max_total_minutes} min`,
+          ].filter(Boolean).join(' · ')}
+        </p>
+      )}
+      {!isSearching && !loading && total >= suggestionCount && (
         <SuggestedCarousel count={suggestionCount} />
       )}
       {loading ? (
         <p>Loading...</p>
-      ) : query ? (
-        <RecipeList recipes={filtered} onDelete={remove} />
+      ) : searchMode === 'ai' ? (
+        isSearching ? (
+          aiLoading ? null : <RecipeList recipes={aiResults?.recipes || []} onDelete={remove} />
+        ) : (
+          <div className="cuisine-groups">
+            {cuisineGroups.map(([cuisine, groupRecipes]) => (
+              <CuisineGroup
+                key={cuisine}
+                cuisine={cuisine}
+                recipes={groupRecipes}
+                expanded={expandedCuisines.has(cuisine)}
+                onToggle={() => toggleCuisine(cuisine)}
+                onDelete={remove}
+              />
+            ))}
+          </div>
+        )
+      ) : isSearching ? (
+        <RecipeList recipes={fuzzyFiltered} onDelete={remove} />
       ) : (
         <div className="cuisine-groups">
           {cuisineGroups.map(([cuisine, groupRecipes]) => (

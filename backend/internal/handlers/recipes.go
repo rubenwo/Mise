@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/rubenwo/recipes/internal/database"
+	"github.com/rubenwo/recipes/internal/llm"
 	"github.com/rubenwo/recipes/internal/models"
 	"github.com/rubenwo/recipes/internal/tools"
 )
@@ -22,10 +23,11 @@ import (
 type RecipeHandler struct {
 	queries       *database.Queries
 	imageSearcher *tools.ImageSearcher
+	llmPool       *llm.ClientPool
 }
 
-func NewRecipeHandler(q *database.Queries, imageSearcher *tools.ImageSearcher) *RecipeHandler {
-	return &RecipeHandler{queries: q, imageSearcher: imageSearcher}
+func NewRecipeHandler(q *database.Queries, imageSearcher *tools.ImageSearcher, llmPool *llm.ClientPool) *RecipeHandler {
+	return &RecipeHandler{queries: q, imageSearcher: imageSearcher, llmPool: llmPool}
 }
 
 func (h *RecipeHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -136,6 +138,88 @@ func (h *RecipeHandler) Search(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"recipes": recipes,
 		"total":   total,
+	})
+}
+
+const aiSearchSystemPrompt = `You are a recipe search assistant. Convert the user's natural language query into structured search parameters. Return valid JSON only with these fields:
+- "query": string - key terms for full-text search (dish name, main ingredient, cooking style). Keep short and relevant.
+- "cuisine_type": string - exact cuisine if clearly mentioned (e.g. "Italian", "Mexican", "Asian") or empty string
+- "dietary_restrictions": array of strings - dietary labels if mentioned (e.g. "vegetarian", "vegan", "gluten-free", "dairy-free", "low-carb", "keto", "high-protein") or empty array
+- "tags": array of strings - any other relevant category tags or empty array
+- "max_total_minutes": number - max total cook+prep time in minutes if a time limit is mentioned (e.g. 30 for "under 30 minutes"), or 0 for no limit
+
+Return only the JSON object, no explanation.`
+
+func (h *RecipeHandler) AISearch(w http.ResponseWriter, r *http.Request) {
+	var req models.AISearchRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Query == "" {
+		writeError(w, http.StatusBadRequest, "query is required")
+		return
+	}
+	if h.llmPool == nil {
+		writeError(w, http.StatusServiceUnavailable, "AI search not available")
+		return
+	}
+
+	client := h.llmPool.Acquire()
+	if client == nil {
+		writeError(w, http.StatusServiceUnavailable, "no AI provider available")
+		return
+	}
+
+	messages := []llm.Message{
+		{Role: "system", Content: aiSearchSystemPrompt},
+		{Role: "user", Content: req.Query},
+	}
+
+	resp, err := client.ChatJSON(r.Context(), messages)
+	if err != nil {
+		log.Printf("AI search LLM error: %v", err)
+		writeError(w, http.StatusInternalServerError, "AI search failed: "+err.Error())
+		return
+	}
+
+	var parsed struct {
+		Query               string   `json:"query"`
+		CuisineType         string   `json:"cuisine_type"`
+		DietaryRestrictions []string `json:"dietary_restrictions"`
+		Tags                []string `json:"tags"`
+		MaxTotalMinutes     int      `json:"max_total_minutes"`
+	}
+	if err := json.Unmarshal([]byte(resp.Message.Content), &parsed); err != nil {
+		log.Printf("AI search parse error: %v, content: %s", err, resp.Message.Content)
+		writeError(w, http.StatusInternalServerError, "failed to parse AI response")
+		return
+	}
+
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+
+	searchReq := models.SearchRequest{
+		Query:               parsed.Query,
+		CuisineType:         parsed.CuisineType,
+		DietaryRestrictions: parsed.DietaryRestrictions,
+		Tags:                parsed.Tags,
+		MaxTotalMinutes:     parsed.MaxTotalMinutes,
+		Limit:               limit,
+	}
+
+	recipes, total, err := h.queries.SearchRecipes(r.Context(), searchReq)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to search recipes")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"recipes":     recipes,
+		"total":       total,
+		"interpreted": parsed,
 	})
 }
 

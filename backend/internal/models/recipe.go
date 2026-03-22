@@ -59,6 +59,12 @@ type SearchRequest struct {
 	CuisineType         string   `json:"cuisine_type"`
 	DietaryRestrictions []string `json:"dietary_restrictions"`
 	Tags                []string `json:"tags"`
+	MaxTotalMinutes     int      `json:"max_total_minutes"`
 	Limit               int      `json:"limit"`
 	Offset              int      `json:"offset"`
+}
+
+type AISearchRequest struct {
+	Query string `json:"query"`
+	Limit int    `json:"limit"`
 }

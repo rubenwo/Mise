@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { fetchRecipeImage } from '../api/client';
 
 export default function RecipeCard({ recipe: initialRecipe, showLink = false, showIngredients = false, onDelete, fetchImageEndpoint }) {
   const [recipe, setRecipe] = useState(initialRecipe);
   const [fetchingImage, setFetchingImage] = useState(false);
+  const navigate = useNavigate();
 
   const handleFetchImage = async (e) => {
     e.preventDefault();
@@ -23,8 +24,12 @@ export default function RecipeCard({ recipe: initialRecipe, showLink = false, sh
     }
   };
 
+  const handleCardClick = () => {
+    if (showLink && recipe.id) navigate(`/recipe/${recipe.id}`);
+  };
+
   return (
-    <div className="recipe-card">
+    <div className="recipe-card" onClick={handleCardClick} style={showLink && recipe.id ? { cursor: 'pointer' } : undefined}>
       {recipe.image_url && (
         <img className="recipe-card-image" src={recipe.image_url} alt={recipe.title} loading="lazy" />
       )}
@@ -57,7 +62,7 @@ export default function RecipeCard({ recipe: initialRecipe, showLink = false, sh
           {recipe.tags.map(tag => <span key={tag} className="tag">{tag}</span>)}
         </div>
       )}
-      <div className="recipe-card-actions">
+      <div className="recipe-card-actions" onClick={e => e.stopPropagation()}>
         {showLink && recipe.id && <Link to={`/recipe/${recipe.id}`} className="btn btn-secondary">View</Link>}
         {recipe.id && (
           <button className="btn btn-secondary" onClick={handleFetchImage} disabled={fetchingImage}>

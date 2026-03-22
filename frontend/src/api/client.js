@@ -43,6 +43,13 @@ export function searchRecipes(params) {
   });
 }
 
+export function aiSearchRecipes(query, limit = 50) {
+  return request('/recipes/ai-search', {
+    method: 'POST',
+    body: JSON.stringify({ query, limit }),
+  });
+}
+
 // Meal Plans
 export function createPlan(name) {
   return request('/plans', { method: 'POST', body: JSON.stringify({ name }) });

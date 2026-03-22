@@ -200,6 +200,11 @@ func (q *Queries) SearchRecipes(ctx context.Context, req models.SearchRequest) (
 		args = append(args, req.Tags)
 		argIdx++
 	}
+	if req.MaxTotalMinutes > 0 {
+		where += fmt.Sprintf(" AND (prep_time_minutes + cook_time_minutes) <= $%d", argIdx)
+		args = append(args, req.MaxTotalMinutes)
+		argIdx++
+	}
 
 	var total int
 	countArgs := make([]any, len(args))

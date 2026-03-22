@@ -111,7 +111,7 @@ func main() {
 	hub := llm.NewHub()
 
 	imageSearcher := tools.NewImageSearcher(cfg.Search.Timeout, cfg.Server.ImagesDir)
-	recipeHandler := handlers.NewRecipeHandler(queries, imageSearcher)
+	recipeHandler := handlers.NewRecipeHandler(queries, imageSearcher, clientPool)
 	generateHandler := handlers.NewGenerateHandler(orchestrator, queries)
 	mealPlanHandler := handlers.NewMealPlanHandler(queries, orchestrator)
 	settingsHandler := handlers.NewSettingsHandler(queries, clientPool, genTimeout)

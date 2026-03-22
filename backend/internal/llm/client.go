@@ -77,13 +77,25 @@ type ChatResponse struct {
 }
 
 func (c *Client) Chat(ctx context.Context, messages []Message, tools []Tool) (*ChatResponse, error) {
-	req := ChatRequest{
+	return c.doChat(ctx, ChatRequest{
 		Model:    c.model,
 		Messages: messages,
 		Tools:    tools,
 		Stream:   false,
-	}
+	})
+}
 
+// ChatJSON calls the model requesting a JSON-formatted response (no tools, format:"json").
+func (c *Client) ChatJSON(ctx context.Context, messages []Message) (*ChatResponse, error) {
+	return c.doChat(ctx, ChatRequest{
+		Model:    c.model,
+		Messages: messages,
+		Stream:   false,
+		Format:   "json",
+	})
+}
+
+func (c *Client) doChat(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling request: %w", err)
