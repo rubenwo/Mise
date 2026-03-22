@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import RecipeCard from '../components/RecipeCard';
 import RecipeList from '../components/RecipeList';
 import { useRecipes } from '../hooks/useRecipes';
@@ -88,7 +88,6 @@ export default function LibraryPage() {
   const [aiError, setAiError] = useState(null);
   const [expandedCuisines, setExpandedCuisines] = useState(new Set());
   const [suggestionCount, setSuggestionCount] = useState(3);
-  const aiDebounceRef = useRef(null);
 
   useEffect(() => {
     getSettings()
@@ -100,33 +99,25 @@ export default function LibraryPage() {
       .catch(() => {});
   }, []);
 
-  // Trigger AI search with debounce when in AI mode
-  useEffect(() => {
-    if (searchMode !== 'ai') return;
-    if (aiDebounceRef.current) clearTimeout(aiDebounceRef.current);
-
+  // Trigger AI search on explicit submit (Enter key)
+  const handleAiSearch = () => {
     if (!query.trim()) {
       setAiResults(null);
       setAiError(null);
       return;
     }
-
     setAiLoading(true);
     setAiError(null);
-    aiDebounceRef.current = setTimeout(() => {
-      aiSearchRecipes(query.trim())
-        .then(data => {
-          setAiResults(data);
-          setAiLoading(false);
-        })
-        .catch(err => {
-          setAiError(err.message || 'AI search failed');
-          setAiLoading(false);
-        });
-    }, 500);
-
-    return () => clearTimeout(aiDebounceRef.current);
-  }, [query, searchMode]);
+    aiSearchRecipes(query.trim())
+      .then(data => {
+        setAiResults(data);
+        setAiLoading(false);
+      })
+      .catch(err => {
+        setAiError(err.message || 'AI search failed');
+        setAiLoading(false);
+      });
+  };
 
   // Reset AI state when switching modes
   const handleModeChange = (mode) => {
@@ -134,7 +125,6 @@ export default function LibraryPage() {
     setAiResults(null);
     setAiError(null);
     setAiLoading(false);
-    if (aiDebounceRef.current) clearTimeout(aiDebounceRef.current);
   };
 
   const fuzzyFiltered = filterRecipes(query, recipes);
@@ -174,6 +164,7 @@ export default function LibraryPage() {
           placeholder={searchMode === 'ai' ? 'Describe what you\'re looking for...' : 'Search recipes...'}
           value={query}
           onChange={e => setQuery(e.target.value)}
+          onKeyDown={e => { if (searchMode === 'ai' && e.key === 'Enter') handleAiSearch(); }}
         />
       </div>
       <div className="mode-toggle">
