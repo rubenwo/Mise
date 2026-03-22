@@ -1,11 +1,13 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -15,13 +17,144 @@ import (
 	"time"
 )
 
+const (
+	maxImageBytes  = 5 * 1024 * 1024 // 5 MB hard cap
+	minImageBytes  = 1024             // 1 KB minimum — reject empty/stub files
+	maxVQDBody     = 256 * 1024
+	maxAPIBody     = 1 * 1024 * 1024
+)
+
+// allowedMIMEToExt maps permitted image MIME types to file extensions.
+var allowedMIMEToExt = map[string]string{
+	"image/jpeg": ".jpg",
+	"image/png":  ".png",
+	"image/webp": ".webp",
+	"image/gif":  ".gif",
+}
+
+// magicSignatures holds the leading byte sequences that identify each image format.
+var magicSignatures = []struct {
+	ext    string
+	header []byte
+}{
+	{".jpg", []byte{0xFF, 0xD8, 0xFF}},
+	{".png", []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}},
+	{".gif", []byte{0x47, 0x49, 0x46, 0x38}}, // GIF8
+	{".webp", []byte{0x52, 0x49, 0x46, 0x46}}, // RIFF (WebP also checks bytes 8-11)
+}
+
+// privateIPNets lists CIDR ranges that must never be contacted (SSRF prevention).
+var privateIPNets []*net.IPNet
+
+func init() {
+	for _, cidr := range []string{
+		"127.0.0.0/8",    // loopback
+		"10.0.0.0/8",     // RFC 1918
+		"172.16.0.0/12",  // RFC 1918
+		"192.168.0.0/16", // RFC 1918
+		"169.254.0.0/16", // link-local
+		"100.64.0.0/10",  // shared address space (RFC 6598)
+		"::1/128",        // IPv6 loopback
+		"fc00::/7",       // IPv6 ULA
+		"fe80::/10",      // IPv6 link-local
+	} {
+		_, ipnet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			panic("bad private CIDR: " + cidr)
+		}
+		privateIPNets = append(privateIPNets, ipnet)
+	}
+}
+
+func isPrivateIP(ip net.IP) bool {
+	for _, block := range privateIPNets {
+		if block.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// safeDialContext resolves the hostname and refuses connections to private IPs.
+func safeDialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid address %q: %w", addr, err)
+	}
+
+	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return nil, fmt.Errorf("DNS lookup failed for %q: %w", host, err)
+	}
+	if len(addrs) == 0 {
+		return nil, fmt.Errorf("no addresses resolved for %q", host)
+	}
+
+	for _, a := range addrs {
+		if isPrivateIP(a.IP) {
+			return nil, fmt.Errorf("refusing to connect: %q resolves to private/reserved address %s", host, a.IP)
+		}
+	}
+
+	dialer := &net.Dialer{}
+	return dialer.DialContext(ctx, network, net.JoinHostPort(addrs[0].IP.String(), port))
+}
+
+// validateURLScheme ensures only http/https URLs are followed.
+func validateURLScheme(u *url.URL) error {
+	switch strings.ToLower(u.Scheme) {
+	case "http", "https":
+		return nil
+	default:
+		return fmt.Errorf("unsupported URL scheme %q (only http/https permitted)", u.Scheme)
+	}
+}
+
+// checkMagicBytes verifies that data begins with the expected image signature.
+func checkMagicBytes(data []byte, ext string) bool {
+	for _, sig := range magicSignatures {
+		if sig.ext != ext {
+			continue
+		}
+		if len(data) < len(sig.header) {
+			return false
+		}
+		if !bytes.Equal(data[:len(sig.header)], sig.header) {
+			return false
+		}
+		// WebP: RIFF????WEBP — also verify bytes 8-11
+		if ext == ".webp" {
+			return len(data) >= 12 && bytes.Equal(data[8:12], []byte("WEBP"))
+		}
+		return true
+	}
+	return false
+}
+
 type ImageSearcher struct {
 	client    *http.Client
 	imagesDir string
 }
 
 func NewImageSearcher(timeout time.Duration, imagesDir string) *ImageSearcher {
-	return &ImageSearcher{client: &http.Client{Timeout: timeout}, imagesDir: imagesDir}
+	transport := &http.Transport{
+		DialContext:         safeDialContext,
+		DisableKeepAlives:   true,
+		MaxIdleConns:        10,
+		TLSHandshakeTimeout: 10 * time.Second,
+	}
+	client := &http.Client{
+		Timeout:   timeout,
+		Transport: transport,
+		// Validate redirect targets so an open redirect can't bypass SSRF checks.
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 5 {
+				return fmt.Errorf("too many redirects")
+			}
+			return validateURLScheme(req.URL)
+		},
+	}
+	return &ImageSearcher{client: client, imagesDir: imagesDir}
 }
 
 // SearchAndDownloadRecipeImage searches for images, tries each candidate URL in order,
@@ -56,8 +189,16 @@ func (s *ImageSearcher) SearchAndDownloadRecipeImage(ctx context.Context, recipe
 }
 
 // tryDownload fetches remoteURL and saves it to disk. Returns the local /images/ path on
-// success, or an error if the server returns a non-2xx status or the transfer fails.
+// success, or an error if validation or the transfer fails.
 func (s *ImageSearcher) tryDownload(ctx context.Context, remoteURL, filename string) (string, error) {
+	u, err := url.Parse(remoteURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid URL: %w", err)
+	}
+	if err := validateURLScheme(u); err != nil {
+		return "", err
+	}
+
 	req, err := http.NewRequestWithContext(ctx, "GET", remoteURL, nil)
 	if err != nil {
 		return "", err
@@ -74,43 +215,50 @@ func (s *ImageSearcher) tryDownload(ctx context.Context, remoteURL, filename str
 		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
-	ext := extFromContentType(resp.Header.Get("Content-Type"))
-	if ext == "" {
+	// Validate Content-Type before reading the body.
+	ct := strings.ToLower(strings.SplitN(resp.Header.Get("Content-Type"), ";", 2)[0])
+	ct = strings.TrimSpace(ct)
+	ext, ok := allowedMIMEToExt[ct]
+	if !ok {
+		// Fall back to URL-derived extension only when Content-Type is absent/generic.
+		if ct != "" && ct != "application/octet-stream" && ct != "binary/octet-stream" {
+			return "", fmt.Errorf("rejected Content-Type %q (not an allowed image type)", ct)
+		}
 		ext = extFromURL(remoteURL)
+		if ext == "" {
+			return "", fmt.Errorf("cannot determine image type: no usable Content-Type or extension")
+		}
 	}
-	if ext == "" {
-		ext = ".jpg"
+
+	// Reject oversized responses before downloading using Content-Length.
+	if cl := resp.ContentLength; cl > maxImageBytes {
+		return "", fmt.Errorf("Content-Length %d exceeds maximum allowed size %d", cl, maxImageBytes)
+	}
+
+	// Read at most maxImageBytes+1 so we can detect files that exceed the limit.
+	limited := io.LimitReader(resp.Body, maxImageBytes+1)
+	data, err := io.ReadAll(limited)
+	if err != nil {
+		return "", fmt.Errorf("read body: %w", err)
+	}
+	if int64(len(data)) > maxImageBytes {
+		return "", fmt.Errorf("image exceeds maximum allowed size of %d bytes", maxImageBytes)
+	}
+	if int64(len(data)) < minImageBytes {
+		return "", fmt.Errorf("image too small (%d bytes), likely invalid", len(data))
+	}
+
+	// Verify the actual bytes match the declared image format.
+	if !checkMagicBytes(data, ext) {
+		return "", fmt.Errorf("file content does not match expected image format %q", ext)
 	}
 
 	localPath := filepath.Join(s.imagesDir, filename+ext)
-	f, err := os.Create(localPath)
-	if err != nil {
-		return "", fmt.Errorf("create file: %w", err)
-	}
-	defer func() { _ = f.Close() }()
-
-	if _, err := io.Copy(f, io.LimitReader(resp.Body, 10*1024*1024)); err != nil {
-		_ = os.Remove(localPath)
+	if err := os.WriteFile(localPath, data, 0644); err != nil {
 		return "", fmt.Errorf("write file: %w", err)
 	}
 
 	return "/images/" + filename + ext, nil
-}
-
-func extFromContentType(ct string) string {
-	ct = strings.ToLower(ct)
-	switch {
-	case strings.Contains(ct, "jpeg") || strings.Contains(ct, "jpg"):
-		return ".jpg"
-	case strings.Contains(ct, "png"):
-		return ".png"
-	case strings.Contains(ct, "webp"):
-		return ".webp"
-	case strings.Contains(ct, "gif"):
-		return ".gif"
-	default:
-		return ""
-	}
 }
 
 func extFromURL(rawURL string) string {
@@ -168,7 +316,7 @@ func (s *ImageSearcher) fetchVQD(ctx context.Context, query string) (string, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxVQDBody))
 	if err != nil {
 		return "", err
 	}
@@ -222,7 +370,7 @@ func (s *ImageSearcher) fetchImageCandidates(ctx context.Context, query, vqd str
 			Height    int    `json:"height"`
 		} `json:"results"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxAPIBody)).Decode(&result); err != nil {
 		return nil, fmt.Errorf("decoding image results: %w", err)
 	}
 
@@ -235,6 +383,13 @@ func (s *ImageSearcher) fetchImageCandidates(ctx context.Context, query, vqd str
 		if img == "" {
 			continue
 		}
+
+		// Validate scheme before adding to candidates.
+		parsed, err := url.Parse(img)
+		if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") {
+			continue
+		}
+
 		lower := strings.ToLower(img)
 		if strings.HasSuffix(lower, ".svg") || strings.Contains(lower, "favicon") {
 			continue
