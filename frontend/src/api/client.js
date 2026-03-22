@@ -180,6 +180,13 @@ export function fetchRecipeImage(id) {
   return request(`/recipes/${id}/fetch-image`, { method: 'POST' });
 }
 
+export function previewImageByTitle(title) {
+  return request('/recipes/preview-image', {
+    method: 'POST',
+    body: JSON.stringify({ title }),
+  });
+}
+
 export function getChatHistory(recipeId) {
   return request(`/recipes/${recipeId}/chat`);
 }

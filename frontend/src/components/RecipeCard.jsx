@@ -1,11 +1,27 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { fetchRecipeImage } from '../api/client';
+import { fetchRecipeImage, previewImageByTitle } from '../api/client';
 
 export default function RecipeCard({ recipe: initialRecipe, showLink = false, showIngredients = false, onDelete, fetchImageEndpoint }) {
   const [recipe, setRecipe] = useState(initialRecipe);
   const [fetchingImage, setFetchingImage] = useState(false);
   const navigate = useNavigate();
+
+  // Auto-fetch image on mount when missing.
+  // Saved recipes (have id): fetch and store via the normal endpoint.
+  // Unsaved recipes (no id, e.g. ReviewPanel): fetch a remote preview by title.
+  useEffect(() => {
+    if (recipe.image_url) return;
+    if (recipe.id) {
+      fetchRecipeImage(recipe.id)
+        .then(result => setRecipe(r => ({ ...r, image_url: result.image_url })))
+        .catch(() => {});
+    } else if (recipe.title) {
+      previewImageByTitle(recipe.title)
+        .then(data => { if (data?.image_url) setRecipe(r => ({ ...r, image_url: data.image_url })); })
+        .catch(() => {});
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleFetchImage = async (e) => {
     e.preventDefault();

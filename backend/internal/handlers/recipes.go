@@ -265,6 +265,31 @@ func (h *RecipeHandler) AISearch(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// PreviewImage returns an image URL for a recipe title without saving anything.
+// Used by the frontend to show images for generated recipes before they are saved.
+func (h *RecipeHandler) PreviewImage(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Title string `json:"title"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Title == "" {
+		writeError(w, http.StatusBadRequest, "title is required")
+		return
+	}
+
+	if h.imageSearcher == nil {
+		writeError(w, http.StatusServiceUnavailable, "image search not available")
+		return
+	}
+
+	imageURL, err := h.imageSearcher.SearchRecipeImage(r.Context(), req.Title)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "could not find image: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"image_url": imageURL})
+}
+
 func (h *RecipeHandler) FetchImage(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil {
