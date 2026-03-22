@@ -39,7 +39,9 @@
       "Bash(find TruenasnasEtenrecipes -name *.sql -o -name schema*)",
       "Bash(find Z:/Eten/recipes/backend -type f -name *.go)",
       "Bash(wc:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ]
   }
 }

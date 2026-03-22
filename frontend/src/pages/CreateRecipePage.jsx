@@ -6,6 +6,7 @@ import RecipeEditForm from '../components/RecipeEditForm';
 const CUISINES = ['', 'Italian', 'Mexican', 'Chinese', 'Japanese', 'Indian', 'Thai', 'French', 'Mediterranean', 'American', 'Korean'];
 const DIFFICULTIES = ['', 'easy', 'medium', 'hard'];
 const DIETARY = ['vegetarian', 'vegan', 'gluten-free', 'dairy-free', 'keto', 'paleo'];
+const SUGGESTED_TAGS = ['high-protein', 'low-carb', 'omega-3', 'low-calorie', 'high-fiber', 'meal-prep', 'quick', 'budget-friendly', 'one-pot', 'freezer-friendly'];
 
 const EMPTY_RECIPE = { ingredients: [], instructions: [] };
 
@@ -36,6 +37,16 @@ export default function CreateRecipePage() {
     }));
   };
 
+  const toggleTag = (tag) => {
+    setHeader(prev => {
+      const current = prev.tags.split(',').map(t => t.trim()).filter(Boolean);
+      const updated = current.includes(tag)
+        ? current.filter(t => t !== tag)
+        : [...current, tag];
+      return { ...prev, tags: updated.join(', ') };
+    });
+  };
+
   const handleSave = async ({ ingredients, instructions }) => {
     if (!header.title.trim()) {
       setError('Title is required.');
@@ -64,9 +75,12 @@ export default function CreateRecipePage() {
   return (
     <div className="recipe-page">
       <div className="recipe-detail">
-        <h2 className="recipe-create-heading">New Recipe</h2>
+        <div className="recipe-create-header">
+          <h2 className="recipe-create-heading">New Recipe</h2>
+          <p className="recipe-create-subheading">Add a recipe to your library</p>
+        </div>
 
-        {error && <div className="error-message">{error}</div>}
+        {error && <div className="error-message" style={{margin: '16px 28px 0'}}>{error}</div>}
 
         <div className="recipe-header-fields">
           <div className="form-group">
@@ -162,13 +176,28 @@ export default function CreateRecipePage() {
           </div>
 
           <div className="form-group">
-            <label>Tags (comma-separated)</label>
+            <label>Tags</label>
+            <div className="checkbox-group" style={{marginBottom: '8px'}}>
+              {SUGGESTED_TAGS.map(tag => {
+                const active = header.tags.split(',').map(t => t.trim()).includes(tag);
+                return (
+                  <label key={tag} className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={active}
+                      onChange={() => toggleTag(tag)}
+                    />
+                    {tag}
+                  </label>
+                );
+              })}
+            </div>
             <input
               type="text"
               className="edit-input"
               value={header.tags}
               onChange={e => set('tags', e.target.value)}
-              placeholder="e.g. quick, weeknight, comfort food"
+              placeholder="or type custom tags, comma-separated"
             />
           </div>
         </div>

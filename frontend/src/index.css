@@ -611,6 +611,33 @@ h3 {
 /* ── Recipe Page ──────────────────────────────────────── */
 .recipe-page-actions { display: flex; gap: 8px; margin-bottom: 24px; }
 
+/* ── Create Recipe Page ───────────────────────────────── */
+.recipe-create-header {
+  background: linear-gradient(160deg, #281208 0%, #5c2c10 100%);
+  padding: 36px 32px 32px;
+}
+.recipe-create-heading {
+  font-family: var(--font-display);
+  font-size: 28px;
+  color: white;
+  margin: 0 0 6px;
+}
+.recipe-create-subheading {
+  font-size: 14px;
+  color: rgba(255,255,255,0.6);
+  margin: 0;
+}
+.recipe-header-fields {
+  padding: 24px 28px 4px;
+}
+.recipe-meta-row {
+  display: flex;
+  gap: 16px;
+}
+.recipe-meta-row .form-group {
+  flex: 1;
+}
+
 /* ── Library ──────────────────────────────────────────── */
 .search-bar { display: flex; gap: 8px; margin-bottom: 24px; }
 .search-bar input {
@@ -928,7 +955,7 @@ a, button, input, select, textarea { transition: all 0.15s ease; }
 .tag-picker-input-row input { flex: 1; padding: 6px 10px; border: 1px solid var(--border); border-radius: 7px; font-family: var(--font-body); font-size: 12px; background: var(--surface); }
 
 /* ── Recipe Edit Form ─────────────────────────────────── */
-.recipe-edit-form { padding: 20px 0; }
+.recipe-edit-form { padding: 24px 28px 28px; border-top: 1px solid var(--border); }
 .recipe-edit-section { margin-bottom: 24px; }
 .recipe-edit-section h4 { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.04em; }
 .recipe-edit-list { list-style: none; padding: 0; margin: 0 0 10px 0; display: flex; flex-direction: column; gap: 6px; }

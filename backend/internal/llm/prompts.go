@@ -27,7 +27,7 @@ IMPORTANT: You MUST respond with valid JSON matching this exact structure:
     "Step 2: Do something else"
   ],
   "dietary_restrictions": ["vegetarian"],
-  "tags": ["quick", "healthy"]
+  "tags": ["quick", "high-protein"]
 }
 
 Rules:
@@ -36,6 +36,7 @@ Rules:
 - Use metric units: grams (g), kilograms (kg), milliliters (ml), liters (l). Teaspoons (tsp) and tablespoons (tbsp) are also acceptable for small amounts. Do NOT use cups, ounces, pounds, or other imperial units.
 - Include at least 3 ingredients and 3 instructions
 - Be specific with measurements and cooking times
+- For tags, use relevant labels from this list when appropriate: high-protein, low-carb, omega-3, low-calorie, high-fiber, meal-prep, quick, budget-friendly, one-pot, freezer-friendly. You may also add other descriptive tags.
 - Respond ONLY with the JSON object, no other text`
 
 func BuildGeneratePrompt(req models.GenerateRequest, existingTitles []string, cuisineCounts map[string]int) string {

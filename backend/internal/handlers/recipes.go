@@ -175,7 +175,7 @@ const aiSearchSystemPrompt = `You are a recipe search assistant. Convert the use
 - "query": string - key terms for full-text search (dish name, main ingredient, cooking style). Keep short and relevant.
 - "cuisine_type": string - exact cuisine if clearly mentioned (e.g. "Italian", "Mexican", "Asian") or empty string
 - "dietary_restrictions": array of strings - dietary labels if mentioned (e.g. "vegetarian", "vegan", "gluten-free", "dairy-free", "low-carb", "keto", "high-protein") or empty array
-- "tags": array of strings - any other relevant category tags or empty array
+- "tags": array of strings - recipe category tags if mentioned. Known tags: high-protein, low-carb, omega-3, low-calorie, high-fiber, meal-prep, quick, budget-friendly, one-pot, freezer-friendly. Use these exact strings when they match the query, or add others if appropriate. Empty array if none apply.
 - "max_total_minutes": number - max total cook+prep time in minutes if a time limit is mentioned (e.g. 30 for "under 30 minutes"), or 0 for no limit
 
 Return only the JSON object, no explanation.`
