@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/rubenwo/recipes/internal/models"
+	"github.com/rubenwo/mise/internal/models"
 )
 
 // KnownCuisines is the canonical list of cuisines the app supports.

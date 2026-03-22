@@ -4,7 +4,7 @@ import (
 	"context"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/rubenwo/recipes/internal/models"
+	"github.com/rubenwo/mise/internal/models"
 )
 
 func (q *Queries) ListOllamaProviders(ctx context.Context) ([]models.OllamaProvider, error) {

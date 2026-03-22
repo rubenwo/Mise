@@ -11,13 +11,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/rubenwo/recipes/internal/config"
-	"github.com/rubenwo/recipes/internal/database"
-	"github.com/rubenwo/recipes/internal/handlers"
-	"github.com/rubenwo/recipes/internal/llm"
-	"github.com/rubenwo/recipes/internal/models"
-	"github.com/rubenwo/recipes/internal/server"
-	"github.com/rubenwo/recipes/internal/tools"
+	"github.com/rubenwo/mise/internal/config"
+	"github.com/rubenwo/mise/internal/database"
+	"github.com/rubenwo/mise/internal/handlers"
+	"github.com/rubenwo/mise/internal/llm"
+	"github.com/rubenwo/mise/internal/models"
+	"github.com/rubenwo/mise/internal/server"
+	"github.com/rubenwo/mise/internal/tools"
 )
 
 func main() {

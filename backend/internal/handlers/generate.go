@@ -7,9 +7,9 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/rubenwo/recipes/internal/database"
-	"github.com/rubenwo/recipes/internal/llm"
-	"github.com/rubenwo/recipes/internal/models"
+	"github.com/rubenwo/mise/internal/database"
+	"github.com/rubenwo/mise/internal/llm"
+	"github.com/rubenwo/mise/internal/models"
 )
 
 type GenerateHandler struct {

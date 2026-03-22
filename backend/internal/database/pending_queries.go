@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/rubenwo/recipes/internal/models"
+	"github.com/rubenwo/mise/internal/models"
 )
 
 func (q *Queries) CreatePendingRecipe(ctx context.Context, r *models.Recipe) error {

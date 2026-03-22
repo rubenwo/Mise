@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rubenwo/recipes/internal/database"
+	"github.com/rubenwo/mise/internal/database"
 )
 
 

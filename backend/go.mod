@@ -1,4 +1,4 @@
-module github.com/rubenwo/recipes
+module github.com/rubenwo/mise
 
 go 1.26.1
 

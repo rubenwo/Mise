@@ -1,6 +1,6 @@
 services:
-  recipes:
-    image: ghcr.io/rubenwo/recipes:latest
+  mise:
+    image: ghcr.io/rubenwo/mise:latest
     pull_policy: always
     restart: unless-stopped
     ports:

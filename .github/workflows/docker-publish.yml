@@ -31,7 +31,7 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/rubenwo/recipes:latest
-            ghcr.io/rubenwo/recipes:${{ github.sha }}
+            ghcr.io/rubenwo/mise:latest
+            ghcr.io/rubenwo/mise:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

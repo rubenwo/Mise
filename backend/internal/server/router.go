@@ -5,8 +5,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/cors"
-	"github.com/rubenwo/recipes/internal/frontend"
-	"github.com/rubenwo/recipes/internal/handlers"
+	"github.com/rubenwo/mise/internal/frontend"
+	"github.com/rubenwo/mise/internal/handlers"
 )
 
 func NewRouter(h *handlers.RecipeHandler, g *handlers.GenerateHandler, mp *handlers.MealPlanHandler, s *handlers.SettingsHandler, p *handlers.PendingHandler, corsOrigin, imagesDir string) *chi.Mux {

@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/rubenwo/recipes/internal/models"
+	"github.com/rubenwo/mise/internal/models"
 )
 
 func (q *Queries) CreateMealPlan(ctx context.Context, name string) (*models.MealPlan, error) {

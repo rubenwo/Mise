@@ -3,8 +3,8 @@ package tools
 import (
 	"context"
 
-	"github.com/rubenwo/recipes/internal/database"
-	"github.com/rubenwo/recipes/internal/models"
+	"github.com/rubenwo/mise/internal/database"
+	"github.com/rubenwo/mise/internal/models"
 )
 
 type DBSearcher struct {

@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rubenwo/recipes/internal/database"
-	"github.com/rubenwo/recipes/internal/llm"
-	"github.com/rubenwo/recipes/internal/models"
-	"github.com/rubenwo/recipes/internal/tools"
+	"github.com/rubenwo/mise/internal/database"
+	"github.com/rubenwo/mise/internal/llm"
+	"github.com/rubenwo/mise/internal/models"
+	"github.com/rubenwo/mise/internal/tools"
 )
 
 // BackgroundGenerator periodically generates recipes and saves them to the DB.
