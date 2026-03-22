@@ -80,6 +80,8 @@ func Load(path string) (*Config, error) {
 			Port:    5432,
 			User:    "postgres",
 			Name:    "recipes",
+			// SSLMode is "disable" intentionally: this app connects to a local PostgreSQL
+			// instance only. Change to "require" or "verify-full" for remote/production use.
 			SSLMode: "disable",
 		},
 		Ollama: OllamaConfig{

@@ -34,10 +34,17 @@ type EdamamResult struct {
 }
 
 func (e *EdamamClient) Search(ctx context.Context, query string) ([]EdamamResult, error) {
-	u := fmt.Sprintf("https://api.edamam.com/api/recipes/v2?type=public&q=%s&app_id=%s&app_key=%s",
-		url.QueryEscape(query), url.QueryEscape(e.appID), url.QueryEscape(e.appKey))
+	// Edamam API v2 requires credentials as query parameters (their API design).
+	// Use url.Values to construct the URL explicitly; do NOT wrap client.Do errors
+	// directly — net/http embeds the full URL (including credentials) in error strings.
+	params := url.Values{}
+	params.Set("type", "public")
+	params.Set("q", query)
+	params.Set("app_id", e.appID)
+	params.Set("app_key", e.appKey)
+	endpoint := "https://api.edamam.com/api/recipes/v2?" + params.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
@@ -47,7 +54,8 @@ func (e *EdamamClient) Search(ctx context.Context, query string) ([]EdamamResult
 
 	resp, err := e.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("calling edamam: %w", err)
+		// Do not wrap err: net/http embeds the full URL (with credentials) in the error string.
+		return nil, fmt.Errorf("calling edamam API: request failed")
 	}
 	defer func() { _ = resp.Body.Close() }()
 

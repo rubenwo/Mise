@@ -131,7 +131,15 @@ func (q *Queries) RemoveRecipeFromPlan(ctx context.Context, planID, recipeID int
 	return nil
 }
 
+const maxIngredientSearchTerms = 20
+
 func (q *Queries) SearchRecipesByIngredients(ctx context.Context, ingredientNames []string) ([]models.Recipe, error) {
+	if len(ingredientNames) == 0 {
+		return nil, nil
+	}
+	if len(ingredientNames) > maxIngredientSearchTerms {
+		ingredientNames = ingredientNames[:maxIngredientSearchTerms]
+	}
 	// Build a query that searches for recipes containing any of the named ingredients
 	// using JSONB array element text matching
 	conditions := make([]string, len(ingredientNames))

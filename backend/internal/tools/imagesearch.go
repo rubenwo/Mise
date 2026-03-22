@@ -254,6 +254,17 @@ func (s *ImageSearcher) tryDownload(ctx context.Context, remoteURL, filename str
 	}
 
 	localPath := filepath.Join(s.imagesDir, filename+ext)
+	absImagesDir, err := filepath.Abs(s.imagesDir)
+	if err != nil {
+		return "", fmt.Errorf("resolving images dir: %w", err)
+	}
+	absLocalPath, err := filepath.Abs(localPath)
+	if err != nil {
+		return "", fmt.Errorf("resolving local path: %w", err)
+	}
+	if !strings.HasPrefix(absLocalPath, absImagesDir+string(filepath.Separator)) {
+		return "", fmt.Errorf("invalid filename: path escapes images directory")
+	}
 	if err := os.WriteFile(localPath, data, 0644); err != nil {
 		return "", fmt.Errorf("write file: %w", err)
 	}

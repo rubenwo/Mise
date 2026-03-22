@@ -13,6 +13,8 @@ func NewRouter(h *handlers.RecipeHandler, g *handlers.GenerateHandler, mp *handl
 	r := chi.NewRouter()
 
 	r.Use(LoggingMiddleware)
+	r.Use(RateLimitMiddleware)
+	r.Use(SecurityHeadersMiddleware)
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{corsOrigin},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},

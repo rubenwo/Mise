@@ -29,7 +29,7 @@ func NewSettingsHandler(q *database.Queries, pool *llm.ClientPool, timeout time.
 func (h *SettingsHandler) ListProviders(w http.ResponseWriter, r *http.Request) {
 	providers, err := h.queries.ListOllamaProviders(r.Context())
 	if err != nil {
-		log.Panicln(err)
+		log.Printf("error listing providers: %v", err)
 		writeError(w, http.StatusInternalServerError, "failed to list providers")
 		return
 	}
@@ -117,6 +117,16 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, settings)
 }
 
+// allowedSettingKeys is the exhaustive set of keys that may be written to app_settings.
+var allowedSettingKeys = map[string]struct{}{
+	"generation_timeout": {},
+	"default_model":      {},
+	"search_enabled":     {},
+	"edamam_app_id":      {},
+	"edamam_app_key":     {},
+	"ollama_host":        {},
+}
+
 func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	var updates map[string]string
 	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
@@ -125,6 +135,10 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 	}
 
 	for key, value := range updates {
+		if _, ok := allowedSettingKeys[key]; !ok {
+			writeError(w, http.StatusBadRequest, "unknown setting key: "+key)
+			return
+		}
 		if err := h.queries.SetSetting(r.Context(), key, value); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to update setting: "+key)
 			return
@@ -156,14 +170,16 @@ func (h *SettingsHandler) ListModels(w http.ResponseWriter, r *http.Request) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Get(host + "/api/tags")
 	if err != nil {
-		writeError(w, http.StatusBadGateway, fmt.Sprintf("failed to reach Ollama at %s: %v", host, err))
+		log.Printf("ListModels: failed to reach Ollama at %s: %v", host, err)
+		writeError(w, http.StatusBadGateway, "failed to reach Ollama: connection error")
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		writeError(w, http.StatusBadGateway, fmt.Sprintf("Ollama returned %d: %s", resp.StatusCode, string(body)))
+		log.Printf("ListModels: Ollama returned %d: %s", resp.StatusCode, string(body))
+		writeError(w, http.StatusBadGateway, fmt.Sprintf("Ollama returned unexpected status %d", resp.StatusCode))
 		return
 	}
 
