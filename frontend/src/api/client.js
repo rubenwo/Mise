@@ -32,10 +32,10 @@ export function deleteRecipe(id) {
   return request(`/recipes/${id}`, { method: 'DELETE' });
 }
 
-export function updateRecipeContent(id, ingredients, instructions) {
+export function updateRecipeContent(id, ingredients, instructions, cuisineType) {
   return request(`/recipes/${id}`, {
     method: 'PATCH',
-    body: JSON.stringify({ ingredients, instructions }),
+    body: JSON.stringify({ ingredients, instructions, cuisine_type: cuisineType }),
   });
 }
 
@@ -178,6 +178,17 @@ export function rejectPendingRecipe(id) {
 
 export function fetchRecipeImage(id) {
   return request(`/recipes/${id}/fetch-image`, { method: 'POST' });
+}
+
+export function getChatHistory(recipeId) {
+  return request(`/recipes/${recipeId}/chat`);
+}
+
+export function sendChatMessage(recipeId, message) {
+  return request(`/recipes/${recipeId}/chat`, {
+    method: 'POST',
+    body: JSON.stringify({ message }),
+  });
 }
 
 export function generateStream(endpoint, body) {

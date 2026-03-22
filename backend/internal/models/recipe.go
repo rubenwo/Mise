@@ -68,3 +68,11 @@ type AISearchRequest struct {
 	Query string `json:"query"`
 	Limit int    `json:"limit"`
 }
+
+type ChatMessage struct {
+	ID        int       `json:"id"`
+	RecipeID  int       `json:"recipe_id"`
+	Role      string    `json:"role"`
+	Content   string    `json:"content"`
+	CreatedAt time.Time `json:"created_at"`
+}

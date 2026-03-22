@@ -165,6 +165,48 @@ func (o *Orchestrator) GenerateRefine(ctx context.Context, userPrompt string, ev
 }
 
 
+// CookingChat handles a single conversational turn for the cooking assistant.
+// It uses the full recipe as system context and has access to web search tools.
+func (o *Orchestrator) CookingChat(ctx context.Context, systemContext string, history []Message, userMessage string) (string, error) {
+	client := o.pool.Acquire()
+	if client == nil {
+		return "", fmt.Errorf("no Ollama providers available")
+	}
+
+	messages := make([]Message, 0, 1+len(history)+1)
+	messages = append(messages, Message{Role: "system", Content: systemContext})
+	messages = append(messages, history...)
+	messages = append(messages, Message{Role: "user", Content: userMessage})
+
+	for i := 0; i < o.maxIterations; i++ {
+		resp, err := client.Chat(ctx, messages, o.tools)
+		if err != nil {
+			return "", fmt.Errorf("chat request failed: %w", err)
+		}
+		messages = append(messages, resp.Message)
+
+		if len(resp.Message.ToolCalls) == 0 {
+			return resp.Message.Content, nil
+		}
+
+		for _, tc := range resp.Message.ToolCalls {
+			result, err := o.toolExecutor.Execute(ctx, tc.Function.Name, tc.Function.Arguments)
+			if err != nil {
+				log.Printf("Tool %s failed: %v", tc.Function.Name, err)
+				result = fmt.Sprintf("Error: %v", err)
+			}
+			messages = append(messages, Message{Role: "tool", Content: result})
+		}
+	}
+
+	// Max iterations reached — final call without tools.
+	resp, err := client.Chat(ctx, messages, nil)
+	if err != nil {
+		return "", fmt.Errorf("final chat request failed: %w", err)
+	}
+	return resp.Message.Content, nil
+}
+
 func (o *Orchestrator) parseRecipe(content string, client *Client) (*models.Recipe, error) {
 	content = strings.TrimSpace(content)
 

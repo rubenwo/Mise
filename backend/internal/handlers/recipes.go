@@ -113,8 +113,9 @@ func (h *RecipeHandler) fetchAndStoreImage(ctx context.Context, id int, title st
 }
 
 type UpdateContentRequest struct {
-	Ingredients []models.Ingredient `json:"ingredients"`
+	Ingredients  []models.Ingredient `json:"ingredients"`
 	Instructions []string            `json:"instructions"`
+	CuisineType  string              `json:"cuisine_type"`
 }
 
 func (h *RecipeHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -130,7 +131,7 @@ func (h *RecipeHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.queries.UpdateRecipeContent(r.Context(), id, req.Ingredients, req.Instructions); err != nil {
+	if err := h.queries.UpdateRecipeContent(r.Context(), id, req.Ingredients, req.Instructions, req.CuisineType); err != nil {
 		if err == pgx.ErrNoRows {
 			writeError(w, http.StatusNotFound, "recipe not found")
 			return

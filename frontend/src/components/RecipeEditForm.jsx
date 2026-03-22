@@ -1,6 +1,9 @@
 import { useState } from 'react';
 
+const CUISINES = ['', 'American', 'Argentine', 'Brazilian', 'British', 'Caribbean', 'Chinese', 'Dutch', 'Eastern European', 'Ethiopian', 'Filipino', 'French', 'German', 'Indian', 'Italian', 'Japanese', 'Korean', 'Mediterranean', 'Mexican', 'Middle Eastern', 'Moroccan', 'Peruvian', 'Scandinavian', 'Spanish', 'Thai', 'Turkish', 'Vietnamese'];
+
 export default function RecipeEditForm({ recipe, onSave, onCancel, saving }) {
+  const [cuisineType, setCuisineType] = useState(recipe.cuisine_type || '');
   const [ingredients, setIngredients] = useState(
     (recipe.ingredients || []).map(ing => ({
       ...ing,
@@ -25,11 +28,22 @@ export default function RecipeEditForm({ recipe, onSave, onCancel, saving }) {
       ...ing,
       amount: parseFloat(ing.amount) || 0,
     }));
-    onSave({ ingredients: parsedIngredients, instructions });
+    onSave({ ingredients: parsedIngredients, instructions, cuisine_type: cuisineType });
   };
 
   return (
     <div className="recipe-edit-form">
+      <section className="recipe-edit-section">
+        <h4>Cuisine</h4>
+        <select
+          value={cuisineType}
+          onChange={e => setCuisineType(e.target.value)}
+          className="edit-input"
+        >
+          {CUISINES.map(c => <option key={c} value={c}>{c || '— None —'}</option>)}
+        </select>
+      </section>
+
       <section className="recipe-edit-section">
         <h4>Ingredients</h4>
         <ul className="recipe-edit-list">

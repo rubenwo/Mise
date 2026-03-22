@@ -74,19 +74,26 @@ func (h *GenerateHandler) Batch(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Warning: could not fetch cuisine counts: %v", err)
 	}
 
-	for i := 0; i < req.Count; i++ {
-		events := make(chan llm.SSEEvent, 10)
+	type batchResult struct {
+		recipe   *models.Recipe
+		messages []llm.Message
+	}
 
-		go func() {
+	for i := 0; i < req.Count; i++ {
+		prompt := llm.BuildGeneratePrompt(req.GenerateRequest, titles, cuisineCounts)
+		prompt += fmt.Sprintf(" (Recipe %d of %d — make it unique from others in this batch)", i+1, req.Count)
+
+		events := make(chan llm.SSEEvent, 10)
+		resultCh := make(chan batchResult, 1)
+
+		go func(p string) {
 			defer close(events)
-			prompt := llm.BuildGeneratePrompt(req.GenerateRequest, titles, cuisineCounts)
-			prompt += fmt.Sprintf(" (Recipe %d of %d — make it unique from others in this batch)", i+1, req.Count)
-			_, messages, err := h.orchestrator.Generate(r.Context(), prompt, events)
+			recipe, messages, err := h.orchestrator.Generate(r.Context(), p, events)
 			if err != nil {
 				events <- llm.SSEEvent{Type: "error", Message: err.Error()}
 			}
-			h.saveChat(prompt, messages)
-		}()
+			resultCh <- batchResult{recipe, messages}
+		}(prompt)
 
 		for event := range events {
 			data, _ := json.Marshal(event)
@@ -95,6 +102,12 @@ func (h *GenerateHandler) Batch(w http.ResponseWriter, r *http.Request) {
 			}
 			flusher.Flush()
 		}
+
+		res := <-resultCh
+		if res.recipe != nil {
+			titles = append(titles, res.recipe.Title)
+		}
+		h.saveChat(prompt, res.messages)
 	}
 }
 

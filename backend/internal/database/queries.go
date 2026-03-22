@@ -47,7 +47,7 @@ func (q *Queries) SetRecipeImage(ctx context.Context, id int, imageURL string) e
 	return err
 }
 
-func (q *Queries) UpdateRecipeContent(ctx context.Context, id int, ingredients []models.Ingredient, instructions []string) error {
+func (q *Queries) UpdateRecipeContent(ctx context.Context, id int, ingredients []models.Ingredient, instructions []string, cuisineType string) error {
 	ingredientsJSON, err := json.Marshal(ingredients)
 	if err != nil {
 		return fmt.Errorf("marshaling ingredients: %w", err)
@@ -57,8 +57,8 @@ func (q *Queries) UpdateRecipeContent(ctx context.Context, id int, ingredients [
 		return fmt.Errorf("marshaling instructions: %w", err)
 	}
 	tag, err := q.pool.Exec(ctx,
-		"UPDATE recipes SET ingredients = $2, instructions = $3, updated_at = NOW() WHERE id = $1",
-		id, ingredientsJSON, instructionsJSON,
+		"UPDATE recipes SET ingredients = $2, instructions = $3, cuisine_type = $4, updated_at = NOW() WHERE id = $1",
+		id, ingredientsJSON, instructionsJSON, cuisineType,
 	)
 	if err != nil {
 		return err
@@ -67,6 +67,35 @@ func (q *Queries) UpdateRecipeContent(ctx context.Context, id int, ingredients [
 		return pgx.ErrNoRows
 	}
 	return nil
+}
+
+func (q *Queries) CreateChatMessage(ctx context.Context, recipeID int, role, content string) error {
+	_, err := q.pool.Exec(ctx,
+		"INSERT INTO recipe_chats (recipe_id, role, content) VALUES ($1, $2, $3)",
+		recipeID, role, content,
+	)
+	return err
+}
+
+func (q *Queries) ListChatMessages(ctx context.Context, recipeID int) ([]models.ChatMessage, error) {
+	rows, err := q.pool.Query(ctx,
+		"SELECT id, recipe_id, role, content, created_at FROM recipe_chats WHERE recipe_id = $1 ORDER BY created_at ASC",
+		recipeID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var messages []models.ChatMessage
+	for rows.Next() {
+		var m models.ChatMessage
+		if err := rows.Scan(&m.ID, &m.RecipeID, &m.Role, &m.Content, &m.CreatedAt); err != nil {
+			return nil, err
+		}
+		messages = append(messages, m)
+	}
+	return messages, rows.Err()
 }
 
 func (q *Queries) GetRecipe(ctx context.Context, id int) (*models.Recipe, error) {

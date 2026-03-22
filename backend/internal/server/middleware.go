@@ -33,9 +33,9 @@ func (w *statusWriter) Flush() {
 	}
 }
 
-// globalLimiter allows 60 requests/second with a burst of 20.
-// This is permissive for normal single-user UI interaction but blocks runaway loops.
-var globalLimiter = rate.NewLimiter(rate.Limit(60), 20)
+// globalLimiter allows 60 requests/second with a burst of 100.
+// The larger burst accommodates batch-generated recipes all loading images simultaneously.
+var globalLimiter = rate.NewLimiter(rate.Limit(60), 100)
 
 func RateLimitMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

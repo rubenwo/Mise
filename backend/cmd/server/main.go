@@ -124,7 +124,9 @@ func main() {
 	bgGenerator.Start(ctx)
 	log.Println("Background recipe generator started")
 
-	router := server.NewRouter(recipeHandler, generateHandler, mealPlanHandler, settingsHandler, pendingHandler, cfg.Server.CORSOrigin, cfg.Server.ImagesDir)
+	chatHandler := handlers.NewChatHandler(queries, orchestrator)
+
+	router := server.NewRouter(recipeHandler, generateHandler, mealPlanHandler, settingsHandler, pendingHandler, chatHandler, cfg.Server.CORSOrigin, cfg.Server.ImagesDir)
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.Server.Port),
