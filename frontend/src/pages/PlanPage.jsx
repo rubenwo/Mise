@@ -514,7 +514,7 @@ function ActivePlanView({ plan, onComplete, onEnd, completedCount }) {
       </div>
 
       <div className={`active-plan-card ${current.completed ? 'active-plan-card-done' : ''}`}>
-        <RecipeCard recipe={current.recipe} showIngredients />
+        <RecipeCard key={current.recipe_id} recipe={current.recipe} showIngredients />
         <div className="active-plan-servings">
           Adjusted servings: <strong>{current.servings}</strong>
           {current.servings !== current.recipe.servings && (
