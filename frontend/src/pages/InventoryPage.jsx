@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { listInventory, createInventoryItem, updateInventoryItem, deleteInventoryItem, scanIngredient } from '../api/client';
+import { listInventory, createInventoryItem, updateInventoryItem, deleteInventoryItem } from '../api/client';
 
 const EMPTY_FORM = { name: '', amount: '', unit: '', notes: '' };
 
@@ -55,71 +55,104 @@ function ItemForm({ initial = EMPTY_FORM, onSave, onCancel, saving, title }) {
   );
 }
 
-function ScanPanel({ onScanned }) {
-  const [scanning, setScanning] = useState(false);
-  const [error, setError] = useState(null);
-  const [preview, setPreview] = useState(null);
+function ScanPanel({ onQueued }) {
   const inputRef = useRef();
 
-  const handleFile = async (file) => {
-    if (!file) return;
-    setPreview(URL.createObjectURL(file));
-    setScanning(true);
-    setError(null);
-    try {
-      const res = await scanIngredient(file);
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: res.statusText }));
-        throw new Error(err.error || 'Scan failed');
-      }
-      const scan = await res.json();
-      onScanned(scan);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setScanning(false);
+  const handleFiles = (files) => {
+    for (const file of files) {
+      if (file.type.startsWith('image/')) onQueued(file);
     }
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    const file = e.dataTransfer.files[0];
-    if (file && file.type.startsWith('image/')) handleFile(file);
   };
 
   return (
     <div className="scan-panel">
       <div
-        className={`scan-dropzone${scanning ? ' scanning' : ''}`}
-        onClick={() => !scanning && inputRef.current?.click()}
+        className="scan-dropzone"
+        onClick={() => inputRef.current?.click()}
         onDragOver={e => e.preventDefault()}
-        onDrop={handleDrop}
+        onDrop={e => { e.preventDefault(); handleFiles(Array.from(e.dataTransfer.files)); }}
       >
-        {preview ? (
-          <img src={preview} alt="preview" className="scan-preview" />
-        ) : (
-          <div className="scan-placeholder">
-            <span className="scan-icon">📷</span>
-            <span>Drop a photo or click to upload</span>
-            <span className="scan-hint">The AI will detect the ingredient and amount</span>
-          </div>
-        )}
-        {scanning && <div className="scan-overlay"><span className="scan-spinner" />Scanning…</div>}
+        <div className="scan-placeholder">
+          <span className="scan-icon">📷</span>
+          <span>Drop photos or click to upload</span>
+          <span className="scan-hint">Upload multiple — AI scans run in the background</span>
+        </div>
       </div>
-      <input ref={inputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
-        onChange={e => handleFile(e.target.files[0])} />
-      {error && <div className="error-message" style={{ marginTop: 8 }}>{error}</div>}
+      <input ref={inputRef} type="file" accept="image/*" capture="environment" multiple style={{ display: 'none' }}
+        onChange={e => { handleFiles(Array.from(e.target.files)); e.target.value = ''; }} />
     </div>
   );
 }
 
-export default function InventoryPage() {
+function PendingScanItem({ scan, onAdd, onDismiss }) {
+  const [form, setForm] = useState(scan.result || EMPTY_FORM);
+  const set = (f, v) => setForm(prev => ({ ...prev, [f]: v }));
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (scan.result) setForm(scan.result);
+  }, [scan.result]);
+
+  const handleAdd = async (e) => {
+    e.preventDefault();
+    if (!form.name.trim()) return;
+    setSaving(true);
+    try {
+      await onAdd({
+        name: form.name.trim(),
+        amount: parseFloat(form.amount) || 0,
+        unit: form.unit.trim(),
+        notes: form.notes.trim(),
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <li className="pending-scan-item">
+      <div className="pending-scan-header">
+        {scan.preview && <img src={scan.preview} alt="" className="pending-scan-thumb" />}
+        <div className="pending-scan-status">
+          {scan.status === 'processing' && <><span className="scan-spinner" /><span>Scanning…</span></>}
+          {scan.status === 'done' && <span className="pending-scan-label">{scan.result?.notes?.startsWith('⚠') ? 'Review — low confidence' : 'Detected'}</span>}
+          {scan.status === 'error' && <span className="pending-scan-error">{scan.error}</span>}
+        </div>
+        <button className="btn btn-secondary btn-sm" onClick={() => onDismiss(scan.id)}>Dismiss</button>
+      </div>
+      {scan.status === 'done' && (
+        <form className="inventory-item-form" onSubmit={handleAdd}>
+          <div className="inventory-form-row">
+            <div className="form-group" style={{ flex: 2 }}>
+              <label>Name *</label>
+              <input className="edit-input" value={form.name} onChange={e => set('name', e.target.value)} placeholder="e.g. whole milk" />
+            </div>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label>Amount</label>
+              <input className="edit-input" type="number" min="0" step="any" value={form.amount} onChange={e => set('amount', e.target.value)} placeholder="0" />
+            </div>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label>Unit</label>
+              <input className="edit-input" value={form.unit} onChange={e => set('unit', e.target.value)} placeholder="g, ml, pcs…" />
+            </div>
+          </div>
+          <div className="inventory-form-actions">
+            <button className="btn btn-primary" type="submit" disabled={saving || !form.name.trim()}>
+              {saving ? 'Adding…' : 'Add to Inventory'}
+            </button>
+          </div>
+        </form>
+      )}
+    </li>
+  );
+}
+
+export default function InventoryPage({ pendingScans, onQueued, onDismiss, onPendingAdded }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState('manual'); // 'manual' | 'scan'
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [scanResult, setScanResult] = useState(null); // pre-fill after scan
 
   useEffect(() => {
     listInventory()
@@ -133,7 +166,6 @@ export default function InventoryPage() {
     try {
       const created = await createInventoryItem(data);
       setItems(prev => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
-      setScanResult(null);
     } catch (err) {
       alert('Failed to save: ' + err.message);
     } finally {
@@ -164,13 +196,10 @@ export default function InventoryPage() {
     }
   };
 
-  const handleScanned = (scan) => {
-    setScanResult({
-      name: scan.name || '',
-      amount: scan.amount > 0 ? String(scan.amount) : '',
-      unit: scan.unit || '',
-      notes: scan.confident ? '' : '⚠ Low confidence — please verify',
-    });
+  const handlePendingAdd = async (scanId, data) => {
+    const created = await createInventoryItem(data);
+    setItems(prev => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+    onPendingAdded(scanId);
   };
 
   return (
@@ -179,24 +208,37 @@ export default function InventoryPage() {
         <div className="inventory-add-header">
           <h3>Add Ingredient</h3>
           <div className="mode-toggle">
-            <button type="button" className={mode === 'manual' ? 'active' : ''} onClick={() => { setMode('manual'); setScanResult(null); }}>Manual</button>
+            <button type="button" className={mode === 'manual' ? 'active' : ''} onClick={() => setMode('manual')}>Manual</button>
             <button type="button" className={mode === 'scan' ? 'active' : ''} onClick={() => setMode('scan')}>Scan Photo</button>
           </div>
         </div>
 
-        {mode === 'scan' && !scanResult && (
-          <ScanPanel onScanned={handleScanned} />
-        )}
+        {mode === 'scan' && <ScanPanel onQueued={onQueued} />}
 
-        {(mode === 'manual' || scanResult) && (
+        {mode === 'manual' && (
           <ItemForm
-            initial={scanResult || EMPTY_FORM}
+            initial={EMPTY_FORM}
             onSave={handleAdd}
             saving={saving}
-            title={scanResult ? (scanResult.notes.startsWith('⚠') ? 'Review detected ingredient' : 'Confirm detected ingredient') : null}
           />
         )}
       </div>
+
+      {pendingScans.length > 0 && (
+        <div className="inventory-list-section">
+          <h3>Pending Scans <span className="inventory-count">({pendingScans.length})</span></h3>
+          <ul className="inventory-list">
+            {pendingScans.map(scan => (
+              <PendingScanItem
+                key={scan.id}
+                scan={scan}
+                onAdd={(data) => handlePendingAdd(scan.id, data)}
+                onDismiss={onDismiss}
+              />
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="inventory-list-section">
         <h3>Your Inventory {!loading && <span className="inventory-count">({items.length})</span>}</h3>
