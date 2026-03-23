@@ -45,6 +45,11 @@ const FEATURE_DEFS = [
     detail: 'Dutch ingredient names for Albert Heijn ordering',
     downstream: ['Dutch ingredient translation disabled', 'Order at Albert Heijn disabled'],
   },
+  {
+    tag: 'inventory',
+    label: 'Inventory scanning',
+    detail: 'Identify ingredients from photos (requires vision model)',
+  },
 ];
 
 function FeatureStatusSection() {
@@ -93,7 +98,7 @@ function FeatureStatusSection() {
   );
 }
 
-const KNOWN_TAGS = ['generation', 'background-generation', 'chat', 'search', 'translation'];
+const KNOWN_TAGS = ['generation', 'background-generation', 'chat', 'search', 'translation', 'inventory'];
 
 function TagPicker({ tags = [], onChange }) {
   const [selected, setSelected] = useState('');
