@@ -139,6 +139,10 @@ var allowedSettingKeys = map[string]struct{}{
 	// Legacy key — no longer used by the scheduler but kept so existing DB rows
 	// are not rejected if they are re-submitted by an old client.
 	"background_generation_interval": {},
+	// Background translation settings
+	"background_translation_enabled": {},
+	"background_translation_days":    {},
+	"background_translation_time":    {},
 }
 
 func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {

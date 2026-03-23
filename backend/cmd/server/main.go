@@ -125,6 +125,10 @@ func main() {
 	bgGenerator.Start(ctx)
 	log.Println("Background recipe generator started")
 
+	bgTranslator := handlers.NewBackgroundTranslator(queries, translator)
+	bgTranslator.Start(ctx)
+	log.Println("Background translation job started")
+
 	chatHandler := handlers.NewChatHandler(queries, orchestrator)
 
 	router := server.NewRouter(recipeHandler, generateHandler, mealPlanHandler, settingsHandler, pendingHandler, chatHandler, cfg.Server.CORSOrigin, cfg.Server.ImagesDir)

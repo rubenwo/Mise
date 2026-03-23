@@ -11,6 +11,7 @@ export default function SettingsPage() {
       <ProvidersSection />
       <GeneralSettings />
       <BackgroundGenerationSettings />
+      <BackgroundTranslationSettings />
     </div>
   );
 }
@@ -397,6 +398,122 @@ function BackgroundGenerationSettings() {
                 onChange={e => setSettings(s => ({ ...s, background_generation_max_retries: e.target.value }))}
               />
               <span className="settings-hint">How many times to retry a recipe if the model returns invalid JSON (0 = no retries)</span>
+            </div>
+          </>
+        )}
+        <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+          {saving ? 'Saving...' : 'Save'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function BackgroundTranslationSettings() {
+  const [providers, setProviders] = useState([]);
+  const [settings, setSettings] = useState({
+    background_translation_enabled: 'false',
+    background_translation_days: '1,2,3,4,5',
+    background_translation_time: '03:00',
+  });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    Promise.all([listProviders(), getSettings()]).then(([provs, data]) => {
+      setProviders(provs || []);
+      const map = {};
+      (data || []).forEach(s => { map[s.key] = s.value; });
+      setSettings(prev => ({ ...prev, ...map }));
+      setLoading(false);
+    });
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await updateSettings({
+        background_translation_enabled: settings.background_translation_enabled,
+        background_translation_days: settings.background_translation_days,
+        background_translation_time: settings.background_translation_time,
+      });
+    } catch (err) {
+      alert('Failed to save: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) return null;
+
+  const hasTranslationProvider = providers.some(p => p.enabled && p.tags && p.tags.includes('translation'));
+  const enabled = settings.background_translation_enabled === 'true';
+  const selectedDays = parseDays(settings.background_translation_days);
+
+  const toggleDay = (value) => {
+    const next = new Set(selectedDays);
+    if (next.has(value)) next.delete(value);
+    else next.add(value);
+    setSettings(s => ({ ...s, background_translation_days: serializeDays(next) }));
+  };
+
+  return (
+    <div className="settings-section">
+      <h3>Background Translation</h3>
+      <p className="settings-description">
+        Pre-populate the translation cache on a schedule so ingredients are already translated
+        when you open Albert Heijn ordering. Tag an LLM provider with <code>translation</code> to
+        use a dedicated (lighter) model.
+      </p>
+
+      {!hasTranslationProvider && (
+        <div className="settings-warning">
+          No enabled provider with the <strong>translation</strong> tag found. Background
+          translation requires at least one enabled provider tagged <code>translation</code>.
+          Add the tag in the LLM Providers section above.
+        </div>
+      )}
+
+      <div className="settings-form">
+        <div className="settings-field">
+          <label>
+            <input
+              type="checkbox"
+              checked={enabled}
+              onChange={e => setSettings(s => ({ ...s, background_translation_enabled: e.target.checked ? 'true' : 'false' }))}
+              style={{ marginRight: 8 }}
+            />
+            Enable background translation
+          </label>
+        </div>
+        {enabled && (
+          <>
+            <div className="settings-field">
+              <label>Days</label>
+              <div className="day-picker">
+                {WEEKDAYS.map(d => (
+                  <label key={d.value} className={`day-chip ${selectedDays.has(d.value) ? 'day-chip-active' : ''}`}>
+                    <input
+                      type="checkbox"
+                      checked={selectedDays.has(d.value)}
+                      onChange={() => toggleDay(d.value)}
+                      style={{ display: 'none' }}
+                    />
+                    {d.label}
+                  </label>
+                ))}
+              </div>
+              <span className="settings-hint">Days of the week to run translation</span>
+            </div>
+            <div className="settings-field">
+              <label>Time of day</label>
+              <input
+                type="time"
+                value={settings.background_translation_time}
+                onChange={e => setSettings(s => ({ ...s, background_translation_time: e.target.value }))}
+                required
+              />
+              <span className="settings-hint">Time to run the translation job (up to {50} ingredients per run)</span>
             </div>
           </>
         )}
