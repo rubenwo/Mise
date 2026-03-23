@@ -55,6 +55,20 @@ func (h *PendingHandler) Approve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Rename pending-{pendingID}.ext → recipe-{recipeID}.ext on disk.
+	if h.imageSearcher != nil && recipe.ImageURL != "" {
+		newFilename := fmt.Sprintf("recipe-%d", recipe.ID)
+		if newURL, err := h.imageSearcher.AdoptImage(recipe.ImageURL, newFilename); err != nil {
+			log.Printf("Approve: failed to rename image for recipe %d: %v", recipe.ID, err)
+		} else if newURL != recipe.ImageURL {
+			if err := h.queries.SetRecipeImage(r.Context(), recipe.ID, newURL); err != nil {
+				log.Printf("Approve: failed to update image URL for recipe %d: %v", recipe.ID, err)
+			} else {
+				recipe.ImageURL = newURL
+			}
+		}
+	}
+
 	writeJSON(w, http.StatusOK, recipe)
 }
 
@@ -90,13 +104,19 @@ func (h *PendingHandler) Reject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.queries.RejectPendingRecipe(r.Context(), id); err != nil {
+	imageURL, err := h.queries.RejectPendingRecipe(r.Context(), id)
+	if err != nil {
 		if err == pgx.ErrNoRows {
 			writeError(w, http.StatusNotFound, "pending recipe not found")
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "failed to reject recipe")
 		return
+	}
+
+	// Clean up the downloaded image file so the images folder stays tidy.
+	if h.imageSearcher != nil && imageURL != "" {
+		h.imageSearcher.DeleteImage(imageURL)
 	}
 
 	w.WriteHeader(http.StatusNoContent)

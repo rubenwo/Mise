@@ -292,6 +292,53 @@ func extFromURL(rawURL string) string {
 	return ""
 }
 
+// AdoptImage renames a local /images/ file to newFilename (no extension), returning
+// the new URL. Used when a pending recipe is approved so the file gets a proper
+// recipe-{id} name instead of pending-{id}. Non-local or empty URLs are returned unchanged.
+func (s *ImageSearcher) AdoptImage(currentURL, newFilename string) (string, error) {
+	if s.imagesDir == "" || currentURL == "" || !strings.HasPrefix(currentURL, "/images/") {
+		return currentURL, nil
+	}
+	oldBasename := strings.TrimPrefix(currentURL, "/images/")
+	ext := filepath.Ext(oldBasename)
+	if ext == "" {
+		return currentURL, nil
+	}
+
+	oldPath := filepath.Join(s.imagesDir, oldBasename)
+	newPath := filepath.Join(s.imagesDir, newFilename+ext)
+
+	// Path traversal guard.
+	absDir, _ := filepath.Abs(s.imagesDir)
+	absNew, _ := filepath.Abs(newPath)
+	if !strings.HasPrefix(absNew, absDir+string(filepath.Separator)) {
+		return currentURL, fmt.Errorf("AdoptImage: new path escapes images dir")
+	}
+
+	if err := os.Rename(oldPath, newPath); err != nil {
+		return currentURL, fmt.Errorf("AdoptImage: rename failed: %w", err)
+	}
+	return "/images/" + newFilename + ext, nil
+}
+
+// DeleteImage removes a local /images/ file from disk. Silently ignores non-local,
+// empty, or already-missing files.
+func (s *ImageSearcher) DeleteImage(imageURL string) {
+	if s.imagesDir == "" || imageURL == "" || !strings.HasPrefix(imageURL, "/images/") {
+		return
+	}
+	basename := strings.TrimPrefix(imageURL, "/images/")
+	path := filepath.Join(s.imagesDir, basename)
+
+	// Path traversal guard.
+	absDir, _ := filepath.Abs(s.imagesDir)
+	absPath, _ := filepath.Abs(path)
+	if !strings.HasPrefix(absPath, absDir+string(filepath.Separator)) {
+		return
+	}
+	_ = os.Remove(path)
+}
+
 // SearchRecipeImage returns the first usable image URL for the given recipe title.
 func (s *ImageSearcher) SearchRecipeImage(ctx context.Context, recipeTitle string) (string, error) {
 	candidates, err := s.searchRecipeImageCandidates(ctx, recipeTitle)

@@ -137,15 +137,17 @@ func (q *Queries) ApprovePendingRecipe(ctx context.Context, pendingID int) (*mod
 	return &r, tx.Commit(ctx)
 }
 
-func (q *Queries) RejectPendingRecipe(ctx context.Context, id int) error {
-	tag, err := q.pool.Exec(ctx, "DELETE FROM pending_recipes WHERE id = $1", id)
-	if err != nil {
-		return err
+// RejectPendingRecipe deletes the pending recipe and returns its image_url (empty if none)
+// so the caller can clean up the file on disk.
+func (q *Queries) RejectPendingRecipe(ctx context.Context, id int) (string, error) {
+	var imageURL string
+	err := q.pool.QueryRow(ctx,
+		"DELETE FROM pending_recipes WHERE id = $1 RETURNING COALESCE(image_url, '')", id,
+	).Scan(&imageURL)
+	if err == pgx.ErrNoRows {
+		return "", pgx.ErrNoRows
 	}
-	if tag.RowsAffected() == 0 {
-		return pgx.ErrNoRows
-	}
-	return nil
+	return imageURL, err
 }
 
 func (q *Queries) GetPendingRecipeTitle(ctx context.Context, id int) (string, error) {
