@@ -9,7 +9,7 @@ import (
 	"github.com/rubenwo/mise/internal/handlers"
 )
 
-func NewRouter(h *handlers.RecipeHandler, g *handlers.GenerateHandler, mp *handlers.MealPlanHandler, s *handlers.SettingsHandler, p *handlers.PendingHandler, ch *handlers.ChatHandler, corsOrigin, imagesDir string) *chi.Mux {
+func NewRouter(h *handlers.RecipeHandler, g *handlers.GenerateHandler, mp *handlers.MealPlanHandler, s *handlers.SettingsHandler, p *handlers.PendingHandler, ch *handlers.ChatHandler, bt *handlers.BackgroundTranslator, corsOrigin, imagesDir string) *chi.Mux {
 	r := chi.NewRouter()
 
 	r.Use(LoggingMiddleware)
@@ -70,6 +70,7 @@ func NewRouter(h *handlers.RecipeHandler, g *handlers.GenerateHandler, mp *handl
 		r.Delete("/settings/providers/{id}", s.DeleteProvider)
 		r.Get("/settings", s.GetSettings)
 		r.Patch("/settings", s.UpdateSettings)
+		r.Post("/settings/translation/run", bt.RunNow)
 	})
 
 	if imagesDir != "" {

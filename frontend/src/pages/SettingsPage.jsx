@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   listProviders, createProvider, updateProvider, deleteProvider,
-  getSettings, updateSettings, listModels,
+  getSettings, updateSettings, listModels, runTranslationNow,
 } from '../api/client';
 
 export default function SettingsPage() {
@@ -418,6 +418,8 @@ function BackgroundTranslationSettings() {
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [runResult, setRunResult] = useState(null);
 
   useEffect(() => {
     Promise.all([listProviders(), getSettings()]).then(([provs, data]) => {
@@ -428,6 +430,19 @@ function BackgroundTranslationSettings() {
       setLoading(false);
     });
   }, []);
+
+  const handleRunNow = async () => {
+    setRunning(true);
+    setRunResult(null);
+    try {
+      const res = await runTranslationNow();
+      setRunResult(res.message || `Translated ${res.translated} ingredient(s).`);
+    } catch (err) {
+      setRunResult('Error: ' + err.message);
+    } finally {
+      setRunning(false);
+    }
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -517,9 +532,20 @@ function BackgroundTranslationSettings() {
             </div>
           </>
         )}
-        <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
-          {saving ? 'Saving...' : 'Save'}
-        </button>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+            {saving ? 'Saving...' : 'Save'}
+          </button>
+          <button
+            className="btn btn-secondary"
+            onClick={handleRunNow}
+            disabled={running || !hasTranslationProvider}
+            title={!hasTranslationProvider ? 'No translation provider configured' : 'Run translation job immediately'}
+          >
+            {running ? 'Running…' : 'Run Now'}
+          </button>
+          {runResult && <span className="settings-hint">{runResult}</span>}
+        </div>
       </div>
     </div>
   );

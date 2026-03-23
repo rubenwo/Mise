@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -132,17 +133,34 @@ func (b *BackgroundTranslator) loadLastRun(ctx context.Context) time.Time {
 	return t
 }
 
-func (b *BackgroundTranslator) runTranslation(ctx context.Context, targetLang string) {
+func (b *BackgroundTranslator) runTranslation(ctx context.Context, targetLang string) int {
 	names, err := b.queries.GetUntranslatedIngredientNames(ctx, targetLang, translationBatchSize)
 	if err != nil {
 		log.Printf("BackgroundTranslator: failed to query untranslated ingredients: %v", err)
-		return
+		return 0
 	}
 	if len(names) == 0 {
 		log.Printf("BackgroundTranslator: all ingredients already translated to %s", targetLang)
-		return
+		return 0
 	}
 	log.Printf("BackgroundTranslator: translating %d ingredient(s) to %s", len(names), targetLang)
 	b.translator.TranslateMany(ctx, names, targetLang)
 	log.Printf("BackgroundTranslator: finished translating to %s", targetLang)
+	return len(names)
+}
+
+// RunNow is an HTTP handler that triggers a translation run immediately,
+// bypassing the schedule. Returns the number of ingredients translated.
+func (b *BackgroundTranslator) RunNow(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
+	defer cancel()
+
+	targetLang, _ := b.queries.GetSetting(ctx, "ui_language")
+	if targetLang == "" || targetLang == "en" {
+		writeJSON(w, http.StatusOK, map[string]any{"translated": 0, "message": "ui_language is English, nothing to translate"})
+		return
+	}
+
+	n := b.runTranslation(ctx, targetLang)
+	writeJSON(w, http.StatusOK, map[string]any{"translated": n})
 }

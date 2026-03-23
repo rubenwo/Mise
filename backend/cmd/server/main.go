@@ -131,7 +131,7 @@ func main() {
 
 	chatHandler := handlers.NewChatHandler(queries, orchestrator)
 
-	router := server.NewRouter(recipeHandler, generateHandler, mealPlanHandler, settingsHandler, pendingHandler, chatHandler, cfg.Server.CORSOrigin, cfg.Server.ImagesDir)
+	router := server.NewRouter(recipeHandler, generateHandler, mealPlanHandler, settingsHandler, pendingHandler, chatHandler, bgTranslator, cfg.Server.CORSOrigin, cfg.Server.ImagesDir)
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.Server.Port),
