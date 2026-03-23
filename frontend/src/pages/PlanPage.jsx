@@ -10,9 +10,13 @@ import RecipeCard from '../components/RecipeCard';
 import AHOrderModal from '../components/AHOrderModal';
 import CookingChat from '../components/CookingChat';
 import { filterRecipes } from '../utils/fuzzyMatch';
+import { useInventory } from '../hooks/useInventory';
+import { matchIngredients, stockSummary } from '../utils/inventoryMatch';
 
-function BrowseRecipeCard({ recipe, servings, onServingsChange, onAdd, adding }) {
+function BrowseRecipeCard({ recipe, servings, onServingsChange, onAdd, adding, inventory }) {
   const [expanded, setExpanded] = useState(false);
+  const matched = matchIngredients(recipe.ingredients, inventory);
+  const summary = stockSummary(matched);
 
   return (
     <div className="plan-browse-item plan-browse-card">
@@ -34,6 +38,11 @@ function BrowseRecipeCard({ recipe, servings, onServingsChange, onAdd, adding })
             {recipe.prep_time_minutes > 0 && <span>Prep {recipe.prep_time_minutes}m</span>}
             {recipe.cook_time_minutes > 0 && <span>Cook {recipe.cook_time_minutes}m</span>}
             {recipe.difficulty && <span className={`difficulty difficulty-${recipe.difficulty}`}>{recipe.difficulty}</span>}
+            {summary && (
+              <span className={`stock-badge ${summary.missing === 0 ? 'stock-badge-all' : summary.inStock === 0 ? 'stock-badge-none' : 'stock-badge-partial'}`}>
+                {summary.missing === 0 ? 'all in stock' : `${summary.missing} missing`}
+              </span>
+            )}
             <button
               className="btn-link"
               onClick={() => setExpanded(e => !e)}
@@ -65,7 +74,10 @@ function BrowseRecipeCard({ recipe, servings, onServingsChange, onAdd, adding })
               <h5>Ingredients</h5>
               <ul>
                 {recipe.ingredients.map((ing, i) => (
-                  <li key={i}><strong>{ing.amount} {ing.unit}</strong> {ing.name}</li>
+                  <li key={i} className="ingredient-row">
+                    <span><strong>{ing.amount} {ing.unit}</strong> {ing.name}</span>
+                    {matched && <span className={`stock-dot ${matched[i].inStock ? 'stock-dot-in' : 'stock-dot-out'}`} title={matched[i].inStock ? 'In stock' : 'Not in stock'} />}
+                  </li>
                 ))}
               </ul>
             </div>
@@ -154,6 +166,7 @@ function PlanDetail({ planId }) {
   const [plan, setPlan] = useState(null);
   const [recipes, setRecipes] = useState([]);
   const [servingsInput, setServingsInput] = useState({});
+  const inventory = useInventory();
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState({});
   const [ingredients, setIngredients] = useState([]);
@@ -363,6 +376,7 @@ function PlanDetail({ planId }) {
                   onServingsChange={v => setServingsInput(prev => ({ ...prev, [recipe.id]: v }))}
                   onAdd={() => handleAdd(recipe.id)}
                   adding={!!adding[recipe.id]}
+                  inventory={inventory}
                 />
               ))}
               {filterRecipes(recipeFilter, recipes).filter(r => !planRecipeIds.has(r.id)).length === 0 && (

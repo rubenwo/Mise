@@ -2,9 +2,14 @@ import { useState, useEffect } from 'react';
 import { fetchRecipeImage, updateRecipeContent } from '../api/client';
 import RecipeEditForm from './RecipeEditForm';
 import CookingChat from './CookingChat';
+import { useInventory } from '../hooks/useInventory';
+import { matchIngredients, stockSummary } from '../utils/inventoryMatch';
 
 export default function RecipeDetail({ recipe: initialRecipe }) {
   const [recipe, setRecipe] = useState(initialRecipe);
+  const inventory = useInventory();
+  const matched = matchIngredients(recipe.ingredients, inventory);
+  const summary = stockSummary(matched);
   const [fetchingImage, setFetchingImage] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
@@ -88,12 +93,18 @@ export default function RecipeDetail({ recipe: initialRecipe }) {
             <section className="recipe-section recipe-ingredients">
               <div className="recipe-section-header">
                 <h3>Ingredients</h3>
+                {summary && (
+                  <span className={`stock-badge ${summary.missing === 0 ? 'stock-badge-all' : summary.inStock === 0 ? 'stock-badge-none' : 'stock-badge-partial'}`}>
+                    {summary.missing === 0 ? 'all in stock' : `${summary.missing} missing`}
+                  </span>
+                )}
               </div>
               <ul className="ingredients-list">
                 {recipe.ingredients && recipe.ingredients.map((ing, i) => (
-                  <li key={i}>
-                    <strong>{ing.amount} {ing.unit}</strong> {ing.name}
-                    {ing.notes && <span className="ingredient-notes"> ({ing.notes})</span>}
+                  <li key={i} className="ingredient-row">
+                    <span><strong>{ing.amount} {ing.unit}</strong> {ing.name}
+                    {ing.notes && <span className="ingredient-notes"> ({ing.notes})</span>}</span>
+                    {matched && <span className={`stock-dot ${matched[i].inStock ? 'stock-dot-in' : 'stock-dot-out'}`} title={matched[i].inStock ? 'In stock' : 'Not in stock'} />}
                   </li>
                 ))}
               </ul>
