@@ -50,6 +50,11 @@ const FEATURE_DEFS = [
     label: 'Inventory scanning',
     detail: 'Identify ingredients from photos (requires vision model)',
   },
+  {
+    tag: 'deduplication',
+    label: 'Shopping list deduplication',
+    detail: 'LLM-based ingredient deduplication for shopping lists',
+  },
 ];
 
 function FeatureStatusSection() {
@@ -98,7 +103,7 @@ function FeatureStatusSection() {
   );
 }
 
-const KNOWN_TAGS = ['generation', 'background-generation', 'chat', 'search', 'translation', 'inventory'];
+const KNOWN_TAGS = ['generation', 'background-generation', 'chat', 'search', 'translation', 'inventory', 'deduplication'];
 
 function TagPicker({ tags = [], onChange }) {
   const [selected, setSelected] = useState('');
