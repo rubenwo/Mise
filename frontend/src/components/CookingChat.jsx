@@ -7,6 +7,7 @@ export default function CookingChat({ recipeId }) {
   const [loading, setLoading] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const bottomRef = useRef(null);
+  const shouldScrollRef = useRef(false);
 
   useEffect(() => {
     getChatHistory(recipeId)
@@ -16,7 +17,9 @@ export default function CookingChat({ recipeId }) {
   }, [recipeId]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (shouldScrollRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages]);
 
   const handleSend = async (e) => {
@@ -24,6 +27,7 @@ export default function CookingChat({ recipeId }) {
     const message = input.trim();
     if (!message || loading) return;
 
+    shouldScrollRef.current = true;
     setInput('');
     const tempId = Date.now();
     setMessages(prev => [...prev, { id: tempId, role: 'user', content: message }]);

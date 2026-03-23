@@ -513,13 +513,15 @@ function ActivePlanView({ plan, onComplete, onEnd, completedCount }) {
       </div>
 
       <div className="active-plan-nav">
-        <button className="btn btn-secondary" onClick={() => setCurrentIndex(i => i - 1)} disabled={currentIndex === 0}>
-          Previous
-        </button>
-        <span className="active-plan-counter">{currentIndex + 1} / {total}</span>
-        <button className="btn btn-secondary" onClick={() => setCurrentIndex(i => i + 1)} disabled={currentIndex === total - 1}>
-          Next
-        </button>
+        {recipes.map((r, i) => (
+          <button
+            key={r.recipe_id}
+            className={`active-plan-nav-tab${i === currentIndex ? ' active-plan-nav-tab-active' : ''}${r.completed ? ' active-plan-nav-tab-done' : ''}`}
+            onClick={() => setCurrentIndex(i)}
+          >
+            {r.recipe?.title || `Recipe ${i + 1}`}
+          </button>
+        ))}
       </div>
 
       <div key={current.recipe_id} className={`active-plan-card ${current.completed ? 'active-plan-card-done' : ''}`}>
