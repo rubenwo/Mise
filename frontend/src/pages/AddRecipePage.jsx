@@ -5,6 +5,7 @@ import { CUISINES, DIFFICULTIES, DIETARY, SUGGESTED_TAGS } from '../constants/re
 import GenerateForm from '../components/GenerateForm';
 import GenerationProgress from '../components/GenerationProgress';
 import ReviewPanel from '../components/ReviewPanel';
+import RecipeCard from '../components/RecipeCard';
 import RecipeEditForm from '../components/RecipeEditForm';
 import { useGeneration } from '../hooks/useGeneration';
 
@@ -72,7 +73,13 @@ function ManualTab() {
   };
 
   return (
+    <div className="recipe-page">
     <div className="recipe-detail">
+      <div className="recipe-create-header">
+        <h2 className="recipe-create-heading">New Recipe</h2>
+        <p className="recipe-create-subheading">Add a recipe to your library</p>
+      </div>
+
       {error && <div className="error-message" style={{ margin: '16px 28px 0' }}>{error}</div>}
 
       <div className="recipe-header-fields">
@@ -155,28 +162,54 @@ function ManualTab() {
       <RecipeEditForm recipe={EMPTY_RECIPE} onSave={handleSave}
         onCancel={() => navigate('/library')} saving={saving} />
     </div>
+    </div>
   );
 }
 
 function ImportTab() {
-  const { events, recipes, loading, error, generate, reset, removeRecipe } = useGeneration();
+  const { events, recipes, loading, error, generate, reset } = useGeneration();
   const [rawText, setRawText] = useState('');
+  const [submittedText, setSubmittedText] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [feedback, setFeedback] = useState('');
+
+  const recipe = recipes[0] || null;
 
   const handleImport = (e) => {
     e.preventDefault();
     if (!rawText.trim()) return;
     reset();
+    setSaved(false);
+    setFeedback('');
+    setSubmittedText(rawText);
     generate('import', { raw_text: rawText });
   };
 
-  const handleRefine = (recipe, feedback) => {
+  const handleSave = async () => {
+    if (!recipe) return;
+    setSaving(true);
+    try {
+      await saveRecipe(recipe);
+      setSaved(true);
+    } catch (err) {
+      alert('Failed to save: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRefine = () => {
+    if (!recipe || !feedback) return;
+    setSaved(false);
     generate('refine', { recipe, feedback });
+    setFeedback('');
   };
 
   const progressEvents = events.filter(e => e.type !== 'recipe');
 
   return (
-    <div>
+    <div className="import-page">
       <form onSubmit={handleImport} className="import-form">
         <textarea
           value={rawText}
@@ -191,8 +224,40 @@ function ImportTab() {
       </form>
 
       {error && <div className="error-message">{error}</div>}
-      <GenerationProgress events={progressEvents} loading={loading} hasRecipes={recipes.length > 0} />
-      <ReviewPanel recipes={recipes} onRefine={handleRefine} onRemove={removeRecipe} loading={loading} />
+      <GenerationProgress events={progressEvents} loading={loading} hasRecipes={!!recipe} />
+
+      {recipe && (
+        <div className="import-comparison">
+          <div className="raw-text-panel">
+            <h3>Original</h3>
+            <pre>{submittedText}</pre>
+          </div>
+          <div className="import-result-panel">
+            <h3>Imported</h3>
+            <RecipeCard recipe={recipe} showIngredients showInstructions />
+            <div className="import-actions">
+              {saved ? (
+                <span className="saved-badge">Saved!</span>
+              ) : (
+                <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+                  {saving ? 'Saving...' : 'Save Recipe'}
+                </button>
+              )}
+              <div className="refine-section">
+                <input
+                  type="text"
+                  placeholder="What would you like to change?"
+                  value={feedback}
+                  onChange={e => setFeedback(e.target.value)}
+                />
+                <button className="btn btn-secondary" onClick={handleRefine} disabled={loading || !feedback}>
+                  Refine
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

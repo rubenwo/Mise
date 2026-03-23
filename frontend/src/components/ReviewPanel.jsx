@@ -61,7 +61,7 @@ export default function ReviewPanel({ recipes, onRefine, onRemove, loading }) {
             />
           ) : (
             <>
-              <RecipeCard key={revisions[i] || 0} recipe={recipe} showIngredients />
+              <RecipeCard key={revisions[i] || 0} recipe={recipe} showIngredients showInstructions />
               <div className="review-actions">
                 <button className="btn btn-primary" onClick={() => handleSave(recipe, i)} disabled={saving[i]}>
                   {saving[i] ? 'Saving...' : 'Save Recipe'}
