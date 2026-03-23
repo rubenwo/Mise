@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"log"
 	"math"
 	"math/rand/v2"
 	"net/http"
@@ -133,18 +134,11 @@ func (h *MealPlanHandler) Suggestions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-type AggregatedIngredient struct {
-	Name    string   `json:"name"`
-	Amount  float64  `json:"amount"`
-	Unit    string   `json:"unit"`
-	Recipes []string `json:"recipes"`
-}
-
 // getPlanIngredients returns the aggregated ingredient list for a plan,
 // using the cache when available.
-func (h *MealPlanHandler) getPlanIngredients(r *http.Request, id int) ([]AggregatedIngredient, error) {
+func (h *MealPlanHandler) getPlanIngredients(r *http.Request, id int) ([]models.AggregatedIngredient, error) {
 	if cached, err := h.queries.GetPlanNormalizedIngredients(r.Context(), id); err == nil && len(cached) > 0 {
-		var result []AggregatedIngredient
+		var result []models.AggregatedIngredient
 		if err := json.Unmarshal(cached, &result); err == nil {
 			return result, nil
 		}
@@ -156,7 +150,7 @@ func (h *MealPlanHandler) getPlanIngredients(r *http.Request, id int) ([]Aggrega
 	}
 
 	type key struct{ name, unit string }
-	agg := map[key]*AggregatedIngredient{}
+	agg := map[key]*models.AggregatedIngredient{}
 	recipeNames := map[key]map[string]bool{}
 
 	for _, mpr := range plan.Recipes {
@@ -168,7 +162,7 @@ func (h *MealPlanHandler) getPlanIngredients(r *http.Request, id int) ([]Aggrega
 			normalizedName := normalizeIngredientName(ing.Name)
 			k := key{normalizedName, strings.ToLower(ing.Unit)}
 			if agg[k] == nil {
-				agg[k] = &AggregatedIngredient{Name: ing.Name, Unit: ing.Unit}
+				agg[k] = &models.AggregatedIngredient{Name: ing.Name, Unit: ing.Unit}
 				recipeNames[k] = map[string]bool{}
 			}
 			agg[k].Amount += ing.Amount * scale
@@ -176,7 +170,7 @@ func (h *MealPlanHandler) getPlanIngredients(r *http.Request, id int) ([]Aggrega
 		}
 	}
 
-	result := make([]AggregatedIngredient, 0, len(agg))
+	result := make([]models.AggregatedIngredient, 0, len(agg))
 	for k, v := range agg {
 		v.Amount = math.Round(v.Amount*100) / 100
 		for title := range recipeNames[k] {
@@ -185,12 +179,19 @@ func (h *MealPlanHandler) getPlanIngredients(r *http.Request, id int) ([]Aggrega
 		sort.Strings(v.Recipes)
 		result = append(result, *v)
 	}
-	sort.Slice(result, func(i, j int) bool {
-		return strings.ToLower(result[i].Name) < strings.ToLower(result[j].Name)
-	})
 
-	if len(plan.Recipes) > 1 {
-		result = consolidateIngredients(result)
+	result = consolidateIngredients(result)
+
+	// LLM fallback: merge any items that still share a normalized name after
+	// deterministic consolidation (e.g. unknown cross-unit density).
+	if h.orchestrator != nil {
+		if dupes := findRemainingDuplicates(result); len(dupes) > 0 {
+			if merged, err := h.orchestrator.DeduplicateIngredients(r.Context(), dupes); err == nil {
+				result = applyLLMDedup(result, dupes, merged)
+			} else {
+				log.Printf("LLM ingredient dedup failed: %v", err)
+			}
+		}
 	}
 
 	if cacheJSON, err := json.Marshal(result); err == nil {
@@ -221,13 +222,13 @@ func (h *MealPlanHandler) Ingredients(w http.ResponseWriter, r *http.Request) {
 }
 
 type AHOrderResult struct {
-	Matched  []AHMatchedIngredient `json:"matched"`
-	NotFound []AggregatedIngredient `json:"not_found"`
+	Matched  []AHMatchedIngredient          `json:"matched"`
+	NotFound []models.AggregatedIngredient  `json:"not_found"`
 }
 
 type AHMatchedIngredient struct {
-	Ingredient AggregatedIngredient `json:"ingredient"`
-	Product    ah.Product           `json:"product"`
+	Ingredient models.AggregatedIngredient `json:"ingredient"`
+	Product    ah.Product                  `json:"product"`
 }
 
 func (h *MealPlanHandler) OrderAH(w http.ResponseWriter, r *http.Request) {
@@ -246,7 +247,7 @@ func (h *MealPlanHandler) OrderAH(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(ingredients) == 0 {
-		writeJSON(w, http.StatusOK, AHOrderResult{Matched: []AHMatchedIngredient{}, NotFound: []AggregatedIngredient{}})
+		writeJSON(w, http.StatusOK, AHOrderResult{Matched: []AHMatchedIngredient{}, NotFound: []models.AggregatedIngredient{}})
 		return
 	}
 
@@ -278,7 +279,7 @@ func (h *MealPlanHandler) OrderAH(w http.ResponseWriter, r *http.Request) {
 	wg.Wait()
 
 	var matched []AHMatchedIngredient
-	var notFound []AggregatedIngredient
+	var notFound []models.AggregatedIngredient
 
 	for i, res := range results {
 		if res.err != nil || res.product == nil {
@@ -295,23 +296,92 @@ func (h *MealPlanHandler) OrderAH(w http.ResponseWriter, r *http.Request) {
 		matched = []AHMatchedIngredient{}
 	}
 	if notFound == nil {
-		notFound = []AggregatedIngredient{}
+		notFound = []models.AggregatedIngredient{}
 	}
 
 	writeJSON(w, http.StatusOK, AHOrderResult{Matched: matched, NotFound: notFound})
 }
 
-// normalizeIngredientName strips common trailing modifiers so ingredients like
-// "butter" and "butter, softened" key together for deduplication.
+// sizeAdjectives are leading qualifiers that do not change what ingredient to buy.
+var sizeAdjectives = map[string]bool{
+	"large": true, "small": true, "medium": true, "whole": true, "extra": true,
+	"fresh": true, "raw": true, "frozen": true,
+}
+
+// ingredientDensity maps a normalized ingredient name to its density in g/mL,
+// used to convert between weight and volume for the same ingredient.
+var ingredientDensity = map[string]float64{
+	"flour":             0.53,
+	"all-purpose flour": 0.53,
+	"bread flour":       0.56,
+	"cake flour":        0.44,
+	"whole wheat flour": 0.52,
+	"wheat flour":       0.52,
+	"sugar":             0.845,
+	"granulated sugar":  0.845,
+	"brown sugar":       0.72,
+	"powdered sugar":    0.56,
+	"icing sugar":       0.56,
+	"salt":              1.20,
+	"butter":            0.91,
+	"olive oil":         0.91,
+	"oil":               0.91,
+	"vegetable oil":     0.91,
+	"sunflower oil":     0.91,
+	"water":             1.00,
+	"milk":              1.03,
+	"cream":             0.97,
+	"honey":             1.42,
+	"rice":              0.75,
+	"oat":               0.35,
+	"rolled oat":        0.35,
+	"cornstarch":        0.61,
+	"baking powder":     0.90,
+	"baking soda":       1.08,
+	"cocoa powder":      0.48,
+	"almond flour":      0.44,
+}
+
+// normalizeIngredientName strips common leading adjectives, parentheticals,
+// trailing modifiers and simple plurals so variant names key together.
 func normalizeIngredientName(name string) string {
-	name = strings.ToLower(name)
+	name = strings.ToLower(strings.TrimSpace(name))
+	// Strip parenthetical notes: "butter (unsalted)" → "butter"
+	if idx := strings.Index(name, "("); idx >= 0 {
+		name = strings.TrimSpace(name[:idx])
+	}
+	// Strip after comma: "butter, softened" → "butter"
 	if idx := strings.Index(name, ","); idx >= 0 {
 		name = strings.TrimSpace(name[:idx])
 	}
+	// Strip common trailing phrases
 	for _, suffix := range []string{" for serving", " for garnish", " for coating", " to taste", " to serve"} {
 		name = strings.TrimSuffix(name, suffix)
 	}
-	return strings.TrimSpace(name)
+	// Strip leading size/quality adjectives (only when words remain after stripping)
+	words := strings.Fields(name)
+	for len(words) > 1 && sizeAdjectives[words[0]] {
+		words = words[1:]
+	}
+	name = strings.Join(words, " ")
+	// Normalize simple plurals: "eggs" → "egg", "onions" → "onion"
+	// Avoid stripping from words ending in "ss" (e.g. "molasses").
+	if len(name) > 3 && strings.HasSuffix(name, "s") && !strings.HasSuffix(name, "ss") {
+		name = name[:len(name)-1]
+	}
+	return name
+}
+
+// isCountableUnit returns true for units that represent indivisible whole items.
+func isCountableUnit(unit string) bool {
+	switch strings.ToLower(strings.TrimSpace(unit)) {
+	case "", "piece", "pieces", "whole", "count", "pcs", "pc",
+		"clove", "cloves", "slice", "slices", "head", "heads",
+		"stalk", "stalks", "sprig", "sprigs", "bunch", "bunches",
+		"can", "cans", "sheet", "sheets":
+		return true
+	}
+	return false
 }
 
 // unitToBase converts an amount+unit to a canonical base unit for aggregation.
@@ -363,28 +433,28 @@ func roundAmount(amount float64) float64 {
 	return math.Round(amount*100) / 100
 }
 
-// consolidateIngredients merges duplicate ingredients by normalizing names and
-// converting to base units before summing. Intended for plans with >1 recipe.
-func consolidateIngredients(ingredients []AggregatedIngredient) []AggregatedIngredient {
-	type key struct{ name, unit string }
+// consolidateIngredients merges duplicate ingredients by:
+//  1. normalizing names and converting to base units
+//  2. re-aggregating by {normName, baseUnit}
+//  3. cross-unit merging g↔ml using known ingredient densities
+//  4. rounding countable items up to the nearest whole number
+func consolidateIngredients(ingredients []models.AggregatedIngredient) []models.AggregatedIngredient {
+	type aggKey struct{ name, unit string }
 	type entry struct {
-		displayName string
-		amount      float64
-		baseUnit    string
-		recipes     map[string]bool
+		normName string
+		amount   float64
+		baseUnit string
+		recipes  map[string]bool
 	}
 
-	agg := map[key]*entry{}
+	// Pass 1: normalize + base-unit convert, aggregate by {normName, baseUnit}.
+	agg := map[aggKey]*entry{}
 	for _, ing := range ingredients {
 		normName := normalizeIngredientName(ing.Name)
 		baseAmount, baseUnit := unitToBase(ing.Amount, ing.Unit)
-		k := key{normName, baseUnit}
+		k := aggKey{normName, baseUnit}
 		if agg[k] == nil {
-			agg[k] = &entry{
-				displayName: normName,
-				baseUnit:    baseUnit,
-				recipes:     map[string]bool{},
-			}
+			agg[k] = &entry{normName: normName, baseUnit: baseUnit, recipes: map[string]bool{}}
 		}
 		agg[k].amount += baseAmount
 		for _, r := range ing.Recipes {
@@ -392,12 +462,76 @@ func consolidateIngredients(ingredients []AggregatedIngredient) []AggregatedIngr
 		}
 	}
 
-	result := make([]AggregatedIngredient, 0, len(agg))
+	// Pass 2: group by normName; attempt g↔ml cross-unit merge via density table.
+	byName := map[string][]*entry{}
 	for _, e := range agg {
-		displayAmount, displayUnit := baseToDisplay(e.amount, e.baseUnit)
-		displayAmount = roundAmount(displayAmount)
-		// Capitalize first letter for display.
-		displayName := e.displayName
+		byName[e.normName] = append(byName[e.normName], e)
+	}
+
+	var merged []*entry
+	for _, group := range byName {
+		if len(group) == 1 {
+			merged = append(merged, group[0])
+			continue
+		}
+		// Separate into g, ml, and other-unit buckets.
+		var gAmt, mlAmt float64
+		var gRecipes, mlRecipes []string
+		hasG, hasML := false, false
+		var others []*entry
+		for _, e := range group {
+			switch e.baseUnit {
+			case "g":
+				gAmt += e.amount
+				for r := range e.recipes {
+					gRecipes = append(gRecipes, r)
+				}
+				hasG = true
+			case "ml":
+				mlAmt += e.amount
+				for r := range e.recipes {
+					mlRecipes = append(mlRecipes, r)
+				}
+				hasML = true
+			default:
+				others = append(others, e)
+			}
+		}
+		if hasG && hasML {
+			density, known := ingredientDensity[group[0].normName]
+			if known {
+				// Convert ml → g and merge into single g entry.
+				combined := &entry{
+					normName: group[0].normName,
+					baseUnit: "g",
+					amount:   gAmt + mlAmt*density,
+					recipes:  map[string]bool{},
+				}
+				for _, r := range gRecipes {
+					combined.recipes[r] = true
+				}
+				for _, r := range mlRecipes {
+					combined.recipes[r] = true
+				}
+				merged = append(merged, combined)
+				merged = append(merged, others...)
+				continue
+			}
+		}
+		// Cannot merge — leave all entries separate (LLM fallback will handle them).
+		merged = append(merged, group...)
+	}
+
+	// Pass 3: build output with display units and countable ceiling.
+	result := make([]models.AggregatedIngredient, 0, len(merged))
+	for _, e := range merged {
+		amount, unit := baseToDisplay(e.amount, e.baseUnit)
+		if isCountableUnit(unit) {
+			amount = math.Ceil(amount)
+		} else {
+			amount = roundAmount(amount)
+		}
+		displayName := e.normName
 		if len(displayName) > 0 {
 			displayName = strings.ToUpper(displayName[:1]) + displayName[1:]
 		}
@@ -406,13 +540,55 @@ func consolidateIngredients(ingredients []AggregatedIngredient) []AggregatedIngr
 			recipes = append(recipes, r)
 		}
 		sort.Strings(recipes)
-		result = append(result, AggregatedIngredient{
+		result = append(result, models.AggregatedIngredient{
 			Name:    displayName,
-			Amount:  displayAmount,
-			Unit:    displayUnit,
+			Amount:  amount,
+			Unit:    unit,
 			Recipes: recipes,
 		})
 	}
+	sort.Slice(result, func(i, j int) bool {
+		return strings.ToLower(result[i].Name) < strings.ToLower(result[j].Name)
+	})
+	return result
+}
+
+// findRemainingDuplicates returns groups (≥2 items) that still share the same
+// normalized name after deterministic consolidation.
+func findRemainingDuplicates(ingredients []models.AggregatedIngredient) [][]models.AggregatedIngredient {
+	groups := map[string][]int{}
+	for i, ing := range ingredients {
+		groups[normalizeIngredientName(ing.Name)] = append(groups[normalizeIngredientName(ing.Name)], i)
+	}
+	var result [][]models.AggregatedIngredient
+	for _, indices := range groups {
+		if len(indices) < 2 {
+			continue
+		}
+		group := make([]models.AggregatedIngredient, len(indices))
+		for j, idx := range indices {
+			group[j] = ingredients[idx]
+		}
+		result = append(result, group)
+	}
+	return result
+}
+
+// applyLLMDedup replaces the duplicate groups in ingredients with the LLM-merged items.
+func applyLLMDedup(ingredients []models.AggregatedIngredient, dupes [][]models.AggregatedIngredient, merged []models.AggregatedIngredient) []models.AggregatedIngredient {
+	remove := map[string]bool{}
+	for _, group := range dupes {
+		for _, ing := range group {
+			remove[normalizeIngredientName(ing.Name)] = true
+		}
+	}
+	result := make([]models.AggregatedIngredient, 0, len(ingredients))
+	for _, ing := range ingredients {
+		if !remove[normalizeIngredientName(ing.Name)] {
+			result = append(result, ing)
+		}
+	}
+	result = append(result, merged...)
 	sort.Slice(result, func(i, j int) bool {
 		return strings.ToLower(result[i].Name) < strings.ToLower(result[j].Name)
 	})

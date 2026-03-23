@@ -37,3 +37,10 @@ type UpdateMealPlanRequest struct {
 type RandomizeRequest struct {
 	Servings []int `json:"servings"`
 }
+
+type AggregatedIngredient struct {
+	Name    string   `json:"name"`
+	Amount  float64  `json:"amount"`
+	Unit    string   `json:"unit"`
+	Recipes []string `json:"recipes"`
+}

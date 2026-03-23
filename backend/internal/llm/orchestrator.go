@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 
 	"github.com/rubenwo/mise/internal/models"
@@ -239,6 +240,77 @@ func (o *Orchestrator) ScanIngredient(ctx context.Context, imageB64 string) ([]m
 		return nil, fmt.Errorf("failed to parse scan JSON: %w\nraw: %s", err, content)
 	}
 	return scans, nil
+}
+
+// DeduplicateIngredients asks the LLM to merge groups of ingredients that share a name
+// but could not be consolidated deterministically (e.g. unknown cross-unit density).
+// Each group becomes exactly one output entry.
+func (o *Orchestrator) DeduplicateIngredients(ctx context.Context, groups [][]models.AggregatedIngredient) ([]models.AggregatedIngredient, error) {
+	client := o.pool.AcquireWithTag("generation")
+	if client == nil {
+		return nil, fmt.Errorf("no provider with tag %q configured or healthy", "generation")
+	}
+
+	groupsJSON, err := json.Marshal(groups)
+	if err != nil {
+		return nil, err
+	}
+
+	messages := []Message{
+		{Role: "user", Content: BuildDeduplicateIngredientsPrompt(string(groupsJSON))},
+	}
+
+	resp, err := client.ChatJSON(ctx, messages)
+	if err != nil {
+		return nil, fmt.Errorf("LLM dedup chat failed: %w", err)
+	}
+
+	content := strings.TrimSpace(resp.Message.Content)
+	if idx := strings.Index(content, "["); idx >= 0 {
+		if endIdx := strings.LastIndex(content, "]"); endIdx >= idx {
+			content = content[idx : endIdx+1]
+		}
+	}
+
+	type llmItem struct {
+		Name   string  `json:"name"`
+		Amount float64 `json:"amount"`
+		Unit   string  `json:"unit"`
+	}
+	var items []llmItem
+	if err := json.Unmarshal([]byte(content), &items); err != nil {
+		return nil, fmt.Errorf("failed to parse dedup response: %w\nraw: %s", err, content)
+	}
+
+	out := make([]models.AggregatedIngredient, 0, len(items))
+	for i, item := range items {
+		if i >= len(groups) {
+			break
+		}
+		recipeSet := map[string]bool{}
+		for _, ing := range groups[i] {
+			for _, r := range ing.Recipes {
+				recipeSet[r] = true
+			}
+		}
+		recipes := make([]string, 0, len(recipeSet))
+		for r := range recipeSet {
+			recipes = append(recipes, r)
+		}
+		sort.Strings(recipes)
+
+		name := strings.TrimSpace(item.Name)
+		if len(name) > 0 {
+			name = strings.ToUpper(name[:1]) + name[1:]
+		}
+		out = append(out, models.AggregatedIngredient{
+			Name:    name,
+			Amount:  item.Amount,
+			Unit:    item.Unit,
+			Recipes: recipes,
+		})
+	}
+	return out, nil
 }
 
 func (o *Orchestrator) parseRecipe(content string, client *Client) (*models.Recipe, error) {

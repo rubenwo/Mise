@@ -243,6 +243,27 @@ Rules:
 - Respond ONLY with the JSON array, no other text`
 }
 
+// BuildDeduplicateIngredientsPrompt builds a prompt asking the LLM to merge groups of
+// ingredients that share the same name but couldn't be merged deterministically.
+func BuildDeduplicateIngredientsPrompt(groupsJSON string) string {
+	return fmt.Sprintf(`You are consolidating a grocery shopping list. The following groups each contain ingredients that appear to be the same item but are listed with different names or units and could not be merged automatically.
+
+For each group, return a single merged ingredient with the correct total amount in the most practical unit for shopping.
+
+Input groups (JSON array of arrays):
+%s
+
+Return a JSON array with exactly one object per input group:
+[{"name": "...", "amount": 0, "unit": "..."}]
+
+Rules:
+- Use the most common/generic ingredient name in English, lowercase
+- Round up countable items (eggs, onions, garlic cloves, etc.) to the nearest whole number
+- Use weight (g or kg) for dry goods, volume (ml or l) for liquids, count (empty unit) for whole items
+- Sum amounts across all entries in each group, converting units as needed
+- Respond ONLY with the JSON array, no other text`, groupsJSON)
+}
+
 // BuildBackgroundGeneratePrompt creates a prompt for unattended background recipe generation.
 // targetCuisine is pre-selected by the caller based on the current cuisine distribution;
 // pass an empty string to let the model choose freely.
