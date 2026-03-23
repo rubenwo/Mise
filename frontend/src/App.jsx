@@ -37,17 +37,24 @@ export default function App() {
         }
         return res.json();
       })
-      .then((scan) => {
-        setPendingScans(prev => prev.map(s => s.id !== id ? s : {
-          ...s,
+      .then((items) => {
+        // Replace the single placeholder with one entry per detected ingredient
+        const resolved = items.map(scan => ({
+          id: nextScanId++,
           status: 'done',
+          preview,
           result: {
             name: scan.name || '',
             amount: scan.amount > 0 ? String(scan.amount) : '',
             unit: scan.unit || '',
             notes: scan.confident ? '' : '⚠ Low confidence — please verify',
           },
+          error: null,
         }));
+        setPendingScans(prev => {
+          const without = prev.filter(s => s.id !== id);
+          return [...without, ...resolved];
+        });
       })
       .catch((err) => {
         setPendingScans(prev => prev.map(s => s.id !== id ? s : { ...s, status: 'error', error: err.message }));

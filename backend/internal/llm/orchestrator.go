@@ -206,10 +206,9 @@ func (o *Orchestrator) CookingChat(ctx context.Context, systemContext string, hi
 }
 
 // ScanIngredient uses a vision-capable model (tagged "inventory") to identify
-// an ingredient from an image. imageB64 is the raw base64-encoded image data
-// (no data-URI prefix). mimeType is used only for informational context in
-// the prompt.
-func (o *Orchestrator) ScanIngredient(ctx context.Context, imageB64 string) (*models.IngredientScan, error) {
+// all ingredients visible in an image. imageB64 is the raw base64-encoded
+// image data (no data-URI prefix).
+func (o *Orchestrator) ScanIngredient(ctx context.Context, imageB64 string) ([]models.IngredientScan, error) {
 	client := o.pool.AcquireWithTag("inventory")
 	if client == nil {
 		return nil, fmt.Errorf("no provider with tag %q configured or healthy", "inventory")
@@ -229,17 +228,17 @@ func (o *Orchestrator) ScanIngredient(ctx context.Context, imageB64 string) (*mo
 	}
 
 	content := strings.TrimSpace(resp.Message.Content)
-	if idx := strings.Index(content, "{"); idx >= 0 {
-		if endIdx := strings.LastIndex(content, "}"); endIdx >= idx {
+	if idx := strings.Index(content, "["); idx >= 0 {
+		if endIdx := strings.LastIndex(content, "]"); endIdx >= idx {
 			content = content[idx : endIdx+1]
 		}
 	}
 
-	var scan models.IngredientScan
-	if err := json.Unmarshal([]byte(content), &scan); err != nil {
+	var scans []models.IngredientScan
+	if err := json.Unmarshal([]byte(content), &scans); err != nil {
 		return nil, fmt.Errorf("failed to parse scan JSON: %w\nraw: %s", err, content)
 	}
-	return &scan, nil
+	return scans, nil
 }
 
 func (o *Orchestrator) parseRecipe(content string, client *Client) (*models.Recipe, error) {

@@ -225,22 +225,20 @@ func SystemPrompt() string {
 }
 
 func BuildScanIngredientPrompt() string {
-	return `Look at this image and identify the ingredient(s) shown.
+	return `Look at this image and identify all ingredients shown.
 
-Respond with a single JSON object:
-{
-  "name": "ingredient name in English, lowercase",
-  "amount": 500,
-  "unit": "g",
-  "confident": true
-}
+Respond with a JSON array — one object per ingredient:
+[
+  {"name": "ingredient name in English, lowercase", "amount": 500, "unit": "g", "confident": true}
+]
 
 Rules:
+- Include every distinct ingredient visible in the image
 - name: the most specific ingredient name you can determine (e.g. "whole milk", "extra virgin olive oil")
 - amount: numeric quantity if visible on packaging, otherwise 0
 - unit: the unit for the amount (g, kg, ml, l, piece, etc.), empty string if unknown
 - confident: true if you are reasonably sure about BOTH the name AND the amount (if amount > 0); false if either is uncertain or the image is unclear
-- Respond ONLY with the JSON object, no other text`
+- Respond ONLY with the JSON array, no other text`
 }
 
 // BuildBackgroundGeneratePrompt creates a prompt for unattended background recipe generation.

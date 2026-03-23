@@ -131,10 +131,10 @@ func (h *InventoryHandler) Scan(w http.ResponseWriter, r *http.Request) {
 		imageB64 = body.Image
 	}
 
-	scan, err := h.orchestrator.ScanIngredient(r.Context(), imageB64)
+	scans, err := h.orchestrator.ScanIngredient(r.Context(), imageB64)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "scan failed: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, scan)
+	writeJSON(w, http.StatusOK, scans)
 }
