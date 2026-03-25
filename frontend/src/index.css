@@ -51,6 +51,13 @@ body {
   padding: 8px 0;
 }
 
+/* ── Nav overlay (closes mobile menu on outside tap) ─── */
+.nav-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+}
+
 /* ── Hamburger (mobile only) ──────────────────────────── */
 .nav-hamburger {
   display: none;
