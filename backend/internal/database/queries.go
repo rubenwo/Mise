@@ -161,6 +161,48 @@ func (q *Queries) DeleteRecipe(ctx context.Context, id int) error {
 	return nil
 }
 
+// RecipeFingerprint holds the minimal data needed for semantic duplicate detection
+// and for building informative "avoid" hints in generation prompts.
+type RecipeFingerprint struct {
+	ID          int
+	Title       string
+	CuisineType string
+	Ingredients []string // raw ingredient names
+}
+
+// ListRecipeFingerprints returns the 100 most-recent recipes with their title,
+// cuisine, and ingredient names. Used for post-generation near-duplicate checking
+// and for building richer prompt avoid-lists.
+func (q *Queries) ListRecipeFingerprints(ctx context.Context) ([]RecipeFingerprint, error) {
+	rows, err := q.pool.Query(ctx,
+		"SELECT id, title, cuisine_type, ingredients FROM recipes ORDER BY created_at DESC LIMIT 100")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []RecipeFingerprint
+	for rows.Next() {
+		var fp RecipeFingerprint
+		var ingredientsJSON []byte
+		if err := rows.Scan(&fp.ID, &fp.Title, &fp.CuisineType, &ingredientsJSON); err != nil {
+			return nil, err
+		}
+		var ings []struct {
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal(ingredientsJSON, &ings); err == nil {
+			for _, ing := range ings {
+				if ing.Name != "" {
+					fp.Ingredients = append(fp.Ingredients, ing.Name)
+				}
+			}
+		}
+		out = append(out, fp)
+	}
+	return out, rows.Err()
+}
+
 func (q *Queries) ListRecipeTitles(ctx context.Context) ([]string, error) {
 	// Limit to 40 most recent titles to keep generation prompts concise.
 	rows, err := q.pool.Query(ctx, "SELECT title FROM recipes ORDER BY created_at DESC LIMIT 40")

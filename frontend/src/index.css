@@ -422,6 +422,22 @@ h3 {
   transition: all 0.15s;
 }
 .review-dismiss:hover { background: #fde8e7; border-color: #f0a49e; color: var(--danger); }
+.near-duplicate-warning {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+  background: #fffbeb;
+  border: 1px solid #f59e0b;
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: #92400e;
+}
+.near-duplicate-icon { font-size: 14px; flex-shrink: 0; }
+.near-duplicate-warning a { color: #b45309; font-weight: 600; text-decoration: underline; }
+.near-duplicate-warning a:hover { color: #92400e; }
 .review-actions { display: flex; align-items: center; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
 .refine-section { display: flex; gap: 8px; flex: 1; min-width: 200px; }
 .refine-section input {

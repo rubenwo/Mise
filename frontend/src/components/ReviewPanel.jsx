@@ -20,7 +20,9 @@ export default function ReviewPanel({ recipes, onRefine, onRemove, loading }) {
   const handleSave = async (recipe, index) => {
     setSaving(prev => ({ ...prev, [index]: true }));
     try {
-      await saveRecipe(recipe);
+      // Strip internal client-side fields before persisting.
+      const { _warnings, ...recipeData } = recipe;
+      await saveRecipe(recipeData);
       onRemove(index);
     } catch (err) {
       alert('Failed to save: ' + err.message);
@@ -61,6 +63,18 @@ export default function ReviewPanel({ recipes, onRefine, onRemove, loading }) {
             />
           ) : (
             <>
+              {recipe._warnings && recipe._warnings.length > 0 && (
+                <div className="near-duplicate-warning">
+                  <span className="near-duplicate-icon">⚠</span>
+                  <span>Similar to existing recipe{recipe._warnings.length > 1 ? 's' : ''}: </span>
+                  {recipe._warnings.map((w, wi) => (
+                    <span key={wi}>
+                      {wi > 0 && ', '}
+                      <a href={`/recipe/${w.id}`} target="_blank" rel="noopener noreferrer">{w.title}</a>
+                    </span>
+                  ))}
+                </div>
+              )}
               <RecipeCard key={revisions[i] || 0} recipe={recipe} showIngredients showInstructions />
               <div className="review-actions">
                 <button className="btn btn-primary" onClick={() => handleSave(recipe, i)} disabled={saving[i]}>

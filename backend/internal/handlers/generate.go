@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/rubenwo/mise/internal/database"
@@ -22,6 +23,56 @@ func NewGenerateHandler(o *llm.Orchestrator, q *database.Queries) *GenerateHandl
 	return &GenerateHandler{orchestrator: o, queries: q}
 }
 
+// commonIngredients are very generic ingredients that appear in almost every
+// recipe and add no identifying value to a prompt fingerprint string.
+var commonIngredients = map[string]bool{
+	"salt": true, "pepper": true, "oil": true, "water": true,
+	"butter": true, "sugar": true, "flour": true,
+	"olive oil": true, "vegetable oil": true, "black pepper": true,
+	"cooking oil": true, "salt and pepper": true,
+}
+
+// fingerprintString formats one RecipeFingerprint as a compact string for the
+// generation prompt: "Title (Cuisine: key1, key2, key3)".
+func fingerprintString(fp database.RecipeFingerprint) string {
+	var key []string
+	for _, name := range fp.Ingredients {
+		norm := strings.ToLower(strings.TrimSpace(name))
+		if !commonIngredients[norm] {
+			key = append(key, norm)
+		}
+		if len(key) == 3 {
+			break
+		}
+	}
+	switch {
+	case fp.CuisineType != "" && len(key) > 0:
+		return fmt.Sprintf("%s (%s: %s)", fp.Title, fp.CuisineType, strings.Join(key, ", "))
+	case fp.CuisineType != "":
+		return fmt.Sprintf("%s (%s)", fp.Title, fp.CuisineType)
+	case len(key) > 0:
+		return fmt.Sprintf("%s (%s)", fp.Title, strings.Join(key, ", "))
+	default:
+		return fp.Title
+	}
+}
+
+// emitNearDuplicateWarnings checks recipe against existing fingerprints and
+// writes any near_duplicate SSE events to w before the recipe event is written.
+func emitNearDuplicateWarnings(w http.ResponseWriter, flusher http.Flusher, recipe models.Recipe, idx int, fingerprints []database.RecipeFingerprint) {
+	for _, dup := range findNearDuplicates(recipe, fingerprints) {
+		event := llm.SSEEvent{
+			Type:    "near_duplicate",
+			Index:   idx,
+			Message: fmt.Sprintf("Similar to existing recipe: %q", dup.Title),
+			Data:    map[string]any{"id": dup.ID, "title": dup.Title},
+		}
+		data, _ := json.Marshal(event)
+		fmt.Fprintf(w, "data: %s\n\n", data)
+		flusher.Flush()
+	}
+}
+
 func (h *GenerateHandler) Single(w http.ResponseWriter, r *http.Request) {
 	var req models.GenerateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -29,17 +80,21 @@ func (h *GenerateHandler) Single(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	titles, err := h.queries.ListRecipeTitles(r.Context())
+	fps, err := h.queries.ListRecipeFingerprints(r.Context())
 	if err != nil {
-		log.Printf("Warning: could not fetch existing titles: %v", err)
+		log.Printf("Warning: could not fetch recipe fingerprints: %v", err)
 	}
 	cuisineCounts, err := h.queries.ListCuisineCounts(r.Context())
 	if err != nil {
 		log.Printf("Warning: could not fetch cuisine counts: %v", err)
 	}
 
-	prompt := llm.BuildGeneratePrompt(req, titles, cuisineCounts)
-	h.streamGeneration(w, r, prompt)
+	formatted := make([]string, len(fps))
+	for i, fp := range fps {
+		formatted[i] = fingerprintString(fp)
+	}
+	prompt := llm.BuildGeneratePrompt(req, formatted, cuisineCounts)
+	h.streamGeneration(w, r, prompt, fps)
 }
 
 func (h *GenerateHandler) Batch(w http.ResponseWriter, r *http.Request) {
@@ -66,13 +121,18 @@ func (h *GenerateHandler) Batch(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	titles, err := h.queries.ListRecipeTitles(r.Context())
+	fps, err := h.queries.ListRecipeFingerprints(r.Context())
 	if err != nil {
-		log.Printf("Warning: could not fetch existing titles: %v", err)
+		log.Printf("Warning: could not fetch recipe fingerprints: %v", err)
 	}
 	cuisineCounts, err := h.queries.ListCuisineCounts(r.Context())
 	if err != nil {
 		log.Printf("Warning: could not fetch cuisine counts: %v", err)
+	}
+
+	formatted := make([]string, len(fps))
+	for i, fp := range fps {
+		formatted[i] = fingerprintString(fp)
 	}
 
 	// Pre-compute a distinct cuisine for each recipe slot so that concurrent
@@ -87,7 +147,7 @@ func (h *GenerateHandler) Batch(w http.ResponseWriter, r *http.Request) {
 				tempCounts[slotReq.CuisineType]++
 			}
 		}
-		prompts[i] = llm.BuildGeneratePrompt(slotReq, titles, nil)
+		prompts[i] = llm.BuildGeneratePrompt(slotReq, formatted, nil)
 		prompts[i] += fmt.Sprintf(" (Recipe %d of %d — make it unique from others in this batch)", i+1, req.Count)
 	}
 
@@ -137,8 +197,14 @@ func (h *GenerateHandler) Batch(w http.ResponseWriter, r *http.Request) {
 		close(allEvents)
 	}()
 
-	// Stream all events to the client as they arrive.
+	// Stream all events to the client. Intercept recipe events to emit
+	// near_duplicate warnings before forwarding the recipe itself.
 	for event := range allEvents {
+		if event.Type == "recipe" {
+			if recipe, ok := event.Data.(models.Recipe); ok {
+				emitNearDuplicateWarnings(w, flusher, recipe, event.Index, fps)
+			}
+		}
 		data, _ := json.Marshal(event)
 		if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
 			return
@@ -165,13 +231,17 @@ func (h *GenerateHandler) Import(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	titles, err := h.queries.ListRecipeTitles(r.Context())
+	fps, err := h.queries.ListRecipeFingerprints(r.Context())
 	if err != nil {
-		log.Printf("Warning: could not fetch existing titles: %v", err)
+		log.Printf("Warning: could not fetch recipe fingerprints: %v", err)
+	}
+	formatted := make([]string, len(fps))
+	for i, fp := range fps {
+		formatted[i] = fingerprintString(fp)
 	}
 
-	prompt := llm.BuildImportPrompt(req.RawText, titles)
-	h.streamGeneration(w, r, prompt)
+	prompt := llm.BuildImportPrompt(req.RawText, formatted)
+	h.streamGeneration(w, r, prompt, fps)
 }
 
 func (h *GenerateHandler) Refine(w http.ResponseWriter, r *http.Request) {
@@ -218,7 +288,7 @@ func (h *GenerateHandler) Refine(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *GenerateHandler) streamGeneration(w http.ResponseWriter, r *http.Request, prompt string) {
+func (h *GenerateHandler) streamGeneration(w http.ResponseWriter, r *http.Request, prompt string, fingerprints []database.RecipeFingerprint) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeError(w, http.StatusInternalServerError, "streaming not supported")
@@ -242,6 +312,13 @@ func (h *GenerateHandler) streamGeneration(w http.ResponseWriter, r *http.Reques
 	}()
 
 	for event := range events {
+		// Emit near_duplicate warnings before the recipe event so the
+		// frontend can attach them to the recipe before rendering.
+		if event.Type == "recipe" {
+			if recipe, ok := event.Data.(models.Recipe); ok {
+				emitNearDuplicateWarnings(w, flusher, recipe, event.Index, fingerprints)
+			}
+		}
 		data, _ := json.Marshal(event)
 		if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
 			return

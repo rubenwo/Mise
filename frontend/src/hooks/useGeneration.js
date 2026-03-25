@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { generateStream } from '../api/client';
 
 export function useGeneration() {
@@ -6,12 +6,17 @@ export function useGeneration() {
   const [recipes, setRecipes] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  // Accumulates near_duplicate warnings keyed by event.index.
+  // Using a ref so updates are visible synchronously when the recipe event
+  // arrives in the same parsing loop iteration.
+  const pendingWarnings = useRef({});
 
   const generate = useCallback(async (endpoint, body) => {
     setLoading(true);
     setError(null);
     setEvents([]);
     setRecipes([]);
+    pendingWarnings.current = {};
 
     try {
       const response = await generateStream(endpoint, body);
@@ -38,8 +43,18 @@ export function useGeneration() {
             const event = JSON.parse(line.slice(6));
             setEvents(prev => [...prev, event]);
 
+            if (event.type === 'near_duplicate') {
+              const idx = event.index ?? 0;
+              pendingWarnings.current[idx] = [
+                ...(pendingWarnings.current[idx] || []),
+                event.data,
+              ];
+            }
             if (event.type === 'recipe') {
-              setRecipes(prev => [...prev, event.data]);
+              const idx = event.index ?? 0;
+              const warnings = pendingWarnings.current[idx] || [];
+              delete pendingWarnings.current[idx];
+              setRecipes(prev => [...prev, { ...event.data, _warnings: warnings }]);
             }
             if (event.type === 'error') {
               setError(event.message);
