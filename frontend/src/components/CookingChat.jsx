@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { getChatHistory, sendChatMessage } from '../api/client';
 
 export default function CookingChat({ recipeId }) {
@@ -55,13 +56,19 @@ export default function CookingChat({ recipeId }) {
         {messages.map((msg, i) => (
           <div key={msg.id ?? i} className={`chat-message chat-message-${msg.role}`}>
             <span className="chat-role">{msg.role === 'user' ? 'You' : 'Chef'}</span>
-            <p>{msg.content}</p>
+            <div className="chat-bubble">
+              {msg.role === 'assistant'
+                ? <ReactMarkdown>{msg.content}</ReactMarkdown>
+                : <p>{msg.content}</p>}
+            </div>
           </div>
         ))}
         {loading && (
           <div className="chat-message chat-message-assistant">
             <span className="chat-role">Chef</span>
-            <p className="chat-thinking">Thinking…</p>
+            <div className="chat-bubble">
+              <p className="chat-thinking">Thinking…</p>
+            </div>
           </div>
         )}
         <div ref={bottomRef} />
