@@ -324,40 +324,195 @@ var sizeAdjectives = map[string]bool{
 // ingredientAliases maps a fully-normalized name to its canonical equivalent.
 // Applied after all other normalization so that stripping can produce matchable keys.
 // Keys and values must be lowercase and already free of parentheticals/commas.
+// NOTE: keys are written in their POST-normalization form (leading sizeAdjectives already
+// stripped, trailing 's' already removed, parentheticals removed). For example:
+//   "whole wheat flour" is never hit because "whole" is stripped → key must be "wheat flour".
+//   "garlic cloves" is never hit because trailing 's' stripped → key must be "garlic clove".
 var ingredientAliases = map[string]string{
-	// Flour variants — all map to plain "flour" for shopping purposes
+
+	// ── Flour ──────────────────────────────────────────────────────────────────
+	// "whole wheat flour" → "whole" stripped by sizeAdjectives → key is "wheat flour"
 	"all purpose flour":  "flour",
 	"all-purpose flour":  "flour",
 	"wheat flour":        "flour",
-	"whole wheat flour":  "flour",
-	"plain flour":        "flour",
+	"plain flour":        "flour", // UK all-purpose
 	"self rising flour":  "flour",
 	"self-rising flour":  "flour",
-	// Pepper — coarseness/grind are irrelevant at the store
+	"self raising flour": "flour",
+	"self-raising flour": "flour",
+	"bread flour":        "flour",
+	"cake flour":         "flour",
+	"rice flour":         "flour",
+	"00 flour":           "flour",
+	"tipo 00":            "flour",
+	// almond flour, spelt flour, buckwheat flour kept distinct — specialty items
+
+	// ── Sugar ──────────────────────────────────────────────────────────────────
+	"granulated sugar":     "sugar",
+	"white sugar":          "sugar",
+	"caster sugar":         "sugar", // UK superfine
+	"castor sugar":         "sugar", // alternate spelling
+	"superfine sugar":      "sugar",
+	"cane sugar":           "sugar",
+	"golden caster sugar":  "sugar",
+	"demerara sugar":       "brown sugar",
+	"muscovado":            "brown sugar",
+	"muscovado sugar":      "brown sugar",
+	"dark brown sugar":     "brown sugar",
+	"light brown sugar":    "brown sugar",
+	"powdered sugar":       "icing sugar", // US → UK canonical
+	"confectioners sugar":  "icing sugar",
+	"confectioners' sugar": "icing sugar",
+	"treacle":              "molasses", // UK dark syrup → US equivalent
+	"dark treacle":         "molasses",
+
+	// ── Oil ────────────────────────────────────────────────────────────────────
+	// "extra virgin olive oil" → "extra" stripped → key is "virgin olive oil"
+	"virgin olive oil": "olive oil",
+	"canola oil":       "vegetable oil", // North American name for rapeseed
+	"rapeseed oil":     "vegetable oil", // UK/EU name for canola
+	"corn oil":         "vegetable oil",
+	"groundnut oil":    "peanut oil", // UK term
+
+	// ── Pepper ─────────────────────────────────────────────────────────────────
 	"black pepper":         "pepper",
 	"ground black pepper":  "pepper",
 	"cracked black pepper": "pepper",
 	"black peppercorn":     "pepper",
-	"white pepper":         "pepper",
-	"ground white pepper":  "pepper",
-	"white peppercorn":     "pepper",
-	// Stock ↔ broth
-	"chicken broth":      "chicken stock",
-	"vegetable broth":    "vegetable stock",
-	"beef broth":         "beef stock",
-	"fish broth":         "fish stock",
-	// Cream variants
+	"ground white pepper":  "white pepper",
+	"white peppercorn":     "white pepper",
+
+	// ── Stock / Broth ───────────────────────────────────────────────────────────
+	"chicken broth":   "chicken stock",
+	"vegetable broth": "vegetable stock",
+	"beef broth":      "beef stock",
+	"fish broth":      "fish stock",
+	"pork broth":      "pork stock",
+	"lamb broth":      "lamb stock",
+
+	// ── Cream ──────────────────────────────────────────────────────────────────
 	"heavy cream":          "cream",
 	"heavy whipping cream": "cream",
-	"double cream":         "cream",
+	"double cream":         "cream", // UK full-fat
 	"whipping cream":       "cream",
-	// Spring onion / scallion
-	"spring onion": "green onion",
-	"scallion":     "green onion",
-	// Tomato paste / purée
-	"tomato puree": "tomato paste",
-	// Garlic
+	"single cream":         "light cream", // UK ~18% fat
+	"half and half":        "light cream", // US ~10-12% fat
+
+	// ── Milk ───────────────────────────────────────────────────────────────────
+	// "whole milk" → "whole" stripped → "milk"; no alias needed
+	"full fat milk":  "milk",
+	"full-fat milk":  "milk",
+	"skimmed milk":   "skim milk", // UK spelling
+	"nonfat milk":    "skim milk", // US alternate
+	"non-fat milk":   "skim milk",
+
+	// ── Yogurt ─────────────────────────────────────────────────────────────────
+	// "natural yogurt/yoghurt" → "natural" stripped → "yogurt"/"yoghurt"; only need yoghurt alias
+	"yoghurt":       "yogurt",       // UK spelling
+	"plain yogurt":  "yogurt",
+	"plain yoghurt": "yogurt",
+	"greek yoghurt": "greek yogurt", // UK spelling
+
+	// ── Butter ─────────────────────────────────────────────────────────────────
+	"unsalted butter": "butter",
+	"salted butter":   "butter",
+
+	// ── Garlic ─────────────────────────────────────────────────────────────────
 	"garlic clove": "garlic",
+
+	// ── Onion family ───────────────────────────────────────────────────────────
+	"spring onion":  "green onion", // UK → US
+	"scallion":      "green onion", // US regional → canonical
+	"eschallot":     "shallot",     // Australian English
+	"green shallot": "green onion", // Australian English
+
+	// ── Tomato ─────────────────────────────────────────────────────────────────
+	"tomato puree":       "tomato paste",
+	"tomato concentrate": "tomato paste",
+	"tinned tomato":      "canned tomato", // UK "tin" = US "can"
+
+	// ── Vegetables — regional / alternate names ─────────────────────────────────
+	"aubergine":     "eggplant",       // UK/FR → US
+	"courgette":     "zucchini",       // UK/FR → US/IT
+	"rocket":        "arugula",        // UK/AU → US/IT
+	"swede":         "rutabaga",       // UK → US
+	"beetroot":      "beet",           // UK → US
+	"mangetout":     "snow pea",       // UK/FR → US
+	"mange tout":    "snow pea",
+	"capsicum":      "bell pepper",    // AU/NZ → US
+	"cos lettuce":   "romaine lettuce",
+	"romaine":       "romaine lettuce",
+	"celery root":   "celeriac",       // US alternate
+	"pak choi":      "bok choy",       // UK spelling
+	"pak choy":      "bok choy",
+	"baby corn":     "corn",
+	"sweetcorn":     "corn",           // UK → US
+	"corn on the cob": "corn",
+
+	// ── Herbs ──────────────────────────────────────────────────────────────────
+	// "coriander" alone safely maps to cilantro: compound forms like
+	// "coriander seed" and "ground coriander" are never affected by this alias.
+	"coriander":      "cilantro", // UK/EU leaf name → US name
+	"coriander leaf": "cilantro",
+	"coriander leave": "cilantro", // post-normalization form of "coriander leaves"
+	// Parsley variants
+	"flat leaf parsley":  "parsley",
+	"flat-leaf parsley":  "parsley",
+	"curly parsley":      "parsley",
+	"italian parsley":    "parsley",
+
+	// ── Cheese ─────────────────────────────────────────────────────────────────
+	"parmigiano":          "parmesan",
+	"parmigiano reggiano": "parmesan",
+	"parmesan cheese":     "parmesan",
+	"grana padano":        "parmesan", // similar hard Italian cheese; interchangeable for shopping
+	"pecorino romano":     "pecorino",
+	"mozzarella cheese":   "mozzarella",
+	"feta cheese":         "feta",
+
+	// ── Legumes ────────────────────────────────────────────────────────────────
+	"garbanzo":            "chickpea", // US alternate → international canonical
+	"garbanzo bean":       "chickpea",
+	"haricot bean":        "navy bean",     // UK → US
+	"cannellini bean":     "white bean",
+	"great northern bean": "white bean",
+	"butter bean":         "lima bean",     // UK → US
+	"broad bean":          "fava bean",     // UK → US/IT
+	"borlotti bean":       "cranberry bean",
+
+	// ── Ground meat ────────────────────────────────────────────────────────────
+	"beef mince":    "ground beef",    // UK → US
+	"pork mince":    "ground pork",
+	"turkey mince":  "ground turkey",
+	"lamb mince":    "ground lamb",
+	"chicken mince": "ground chicken",
+	"mince beef":    "ground beef",
+
+	// ── Seafood ────────────────────────────────────────────────────────────────
+	"prawn":      "shrimp", // UK/AU → US
+	"king prawn": "shrimp",
+
+	// ── Pork cuts ──────────────────────────────────────────────────────────────
+	"pork butt":   "pork shoulder",
+	"boston butt": "pork shoulder",
+	"pork collar": "pork shoulder",
+	"pork neck":   "pork shoulder",
+
+	// ── Pantry staples ──────────────────────────────────────────────────────────
+	"cornflour":           "cornstarch",    // UK name for cornstarch
+	"corn flour":          "cornstarch",
+	"bicarbonate of soda": "baking soda",   // UK → US
+	"bicarb":              "baking soda",
+	"bicarb soda":         "baking soda",   // AU term
+	"soya sauce":          "soy sauce",     // UK spelling
+	"shoyu":               "soy sauce",     // Japanese name
+	"vanilla essence":     "vanilla extract", // UK term
+	"balsamic":            "balsamic vinegar",
+	"passata":             "tomato passata", // common name shorthand
+
+	// ── Nuts ───────────────────────────────────────────────────────────────────
+	"groundnut": "peanut",   // UK term
+	"filbert":   "hazelnut", // old/regional name for hazelnut
 }
 
 // ingredientDensity maps a normalized ingredient name to its density in g/mL,
