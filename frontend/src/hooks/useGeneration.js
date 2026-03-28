@@ -1,6 +1,8 @@
 import { useState, useCallback, useRef } from 'react';
 import { generateStream } from '../api/client';
 
+let _clientIdCounter = 0;
+
 export function useGeneration() {
   const [events, setEvents] = useState([]);
   const [recipes, setRecipes] = useState([]);
@@ -54,7 +56,7 @@ export function useGeneration() {
               const idx = event.index ?? 0;
               const warnings = pendingWarnings.current[idx] || [];
               delete pendingWarnings.current[idx];
-              setRecipes(prev => [...prev, { ...event.data, _warnings: warnings }]);
+              setRecipes(prev => [...prev, { ...event.data, _warnings: warnings, _clientId: ++_clientIdCounter }]);
             }
             if (event.type === 'error') {
               setError(event.message);
@@ -77,8 +79,8 @@ export function useGeneration() {
     setError(null);
   }, []);
 
-  const removeRecipe = useCallback((index) => {
-    setRecipes(prev => prev.filter((_, i) => i !== index));
+  const removeRecipe = useCallback((clientId) => {
+    setRecipes(prev => prev.filter(r => r._clientId !== clientId));
   }, []);
 
   return { events, recipes, loading, error, generate, reset, removeRecipe };
