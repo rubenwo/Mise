@@ -3,13 +3,12 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   getPlan, createPlan, listPlans, deletePlan,
   addRecipeToPlan, removeRecipeFromPlan, updatePlanRecipe,
-  listRecipes, updatePlan, getPlanIngredients, getPlanSuggestions,
-  saveRecipe, randomizePlan,
+  updatePlan, getPlanIngredients, getPlanSuggestions,
+  saveRecipe, randomizePlan, librarySearch,
 } from '../api/client';
 import RecipeCard from '../components/RecipeCard';
 import AHOrderModal from '../components/AHOrderModal';
 import CookingChat from '../components/CookingChat';
-import { filterRecipes } from '../utils/fuzzyMatch';
 import { useInventory } from '../hooks/useInventory';
 import { matchIngredients, stockSummary } from '../utils/inventoryMatch';
 
@@ -173,6 +172,7 @@ function PlanDetail({ planId }) {
   const [recipeFilter, setRecipeFilter] = useState('');
   const [randomDays, setRandomDays] = useState([4]);
   const [randomizing, setRandomizing] = useState(false);
+  const [removedIds, setRemovedIds] = useState(new Set());
   const [loadingIngredients, setLoadingIngredients] = useState(true);
 
   const loadIngredients = useCallback(async (signal) => {
@@ -193,9 +193,15 @@ function PlanDetail({ planId }) {
     return () => ctrl.abort();
   }, [planId, loadIngredients]);
 
+  // Debounced backend search for recipe browser
   useEffect(() => {
-    listRecipes(500, 0).then(data => setRecipes(data.recipes || []));
-  }, []);
+    const timer = setTimeout(() => {
+      librarySearch({ keywords: recipeFilter.trim(), limit: 100 })
+        .then(data => setRecipes(data.recipes || []))
+        .catch(() => {});
+    }, recipeFilter.trim() ? 300 : 0);
+    return () => clearTimeout(timer);
+  }, [recipeFilter]);
 
   const planRecipeIds = new Set((plan?.recipes || []).map(r => r.recipe_id));
 
@@ -217,6 +223,7 @@ function PlanDetail({ planId }) {
 
   const handleRemove = async (recipeId) => {
     const updated = await removeRecipeFromPlan(planId, recipeId);
+    setRemovedIds(prev => new Set([...prev, recipeId]));
     updatePlanAndIngredients(updated);
   };
 
@@ -243,7 +250,8 @@ function PlanDetail({ planId }) {
   const handleRandomize = async () => {
     setRandomizing(true);
     try {
-      const updated = await randomizePlan(planId, randomDays);
+      const updated = await randomizePlan(planId, randomDays, [...removedIds]);
+      setRemovedIds(new Set());
       updatePlanAndIngredients(updated);
     } catch (err) {
       alert('Failed to randomize: ' + err.message);
@@ -374,7 +382,7 @@ function PlanDetail({ planId }) {
               />
             </div>
             <div className="plan-recipe-browser">
-              {filterRecipes(recipeFilter, recipes).filter(r => !planRecipeIds.has(r.id)).map(recipe => (
+              {recipes.filter(r => !planRecipeIds.has(r.id)).map(recipe => (
                 <BrowseRecipeCard
                   key={recipe.id}
                   recipe={recipe}
@@ -385,8 +393,8 @@ function PlanDetail({ planId }) {
                   inventory={inventory}
                 />
               ))}
-              {filterRecipes(recipeFilter, recipes).filter(r => !planRecipeIds.has(r.id)).length === 0 && (
-                <p className="empty-state">{recipeFilter ? 'No recipes match your filter.' : 'All recipes are already in this plan.'}</p>
+              {recipes.filter(r => !planRecipeIds.has(r.id)).length === 0 && (
+                <p className="empty-state">{recipeFilter ? 'No recipes match your filter.' : 'Type to search your recipe library.'}</p>
               )}
             </div>
           </div>

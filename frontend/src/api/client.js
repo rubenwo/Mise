@@ -13,8 +13,21 @@ async function request(path, options = {}) {
   return res.json();
 }
 
-export function listRecipes(limit = 20, offset = 0) {
-  return request(`/recipes?limit=${limit}&offset=${offset}`);
+export function listRecipes(limit = 20, offset = 0, cuisineType = '') {
+  let url = `/recipes?limit=${limit}&offset=${offset}`;
+  if (cuisineType) url += `&cuisine_type=${encodeURIComponent(cuisineType)}`;
+  return request(url);
+}
+
+export function listCuisines() {
+  return request('/recipes/cuisines');
+}
+
+export function librarySearch(params) {
+  return request('/recipes/library-search', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
 }
 
 export function getRecipe(id) {
@@ -114,10 +127,10 @@ export function getPlanIngredients(planId, options) {
   return request(`/plans/${planId}/ingredients`, options);
 }
 
-export function randomizePlan(planId, servings) {
+export function randomizePlan(planId, servings, excludedIds = []) {
   return request(`/plans/${planId}/randomize`, {
     method: 'POST',
-    body: JSON.stringify({ servings }),
+    body: JSON.stringify({ servings, excluded_ids: excludedIds }),
   });
 }
 

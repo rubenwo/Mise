@@ -34,17 +34,18 @@ func NewRecipeHandler(q *database.Queries, imageSearcher *tools.ImageSearcher, l
 func (h *RecipeHandler) List(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	cuisineType := r.URL.Query().Get("cuisine_type")
 
 	if limit <= 0 {
 		limit = 20
-	} else if limit > 100 {
-		limit = 100
+	} else if limit > 1000 {
+		limit = 1000
 	}
 	if offset < 0 {
 		offset = 0
 	}
 
-	recipes, total, err := h.queries.ListRecipes(r.Context(), limit, offset)
+	recipes, total, err := h.queries.ListRecipes(r.Context(), limit, offset, cuisineType)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list recipes")
 		return
@@ -53,6 +54,56 @@ func (h *RecipeHandler) List(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"recipes": recipes,
 		"total":   total,
+	})
+}
+
+func (h *RecipeHandler) ListCuisines(w http.ResponseWriter, r *http.Request) {
+	cuisines, err := h.queries.ListCuisines(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list cuisines")
+		return
+	}
+	if cuisines == nil {
+		cuisines = []database.CuisineMeta{}
+	}
+	writeJSON(w, http.StatusOK, cuisines)
+}
+
+func (h *RecipeHandler) LibrarySearchDirect(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Keywords            string   `json:"keywords"`
+		CuisineType         string   `json:"cuisine_type"`
+		DietaryRestrictions []string `json:"dietary_restrictions"`
+		Tags                []string `json:"tags"`
+		MaxTotalMinutes     int      `json:"max_total_minutes"`
+		Limit               int      `json:"limit"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Limit <= 0 {
+		req.Limit = 50
+	}
+
+	recipes, err := h.queries.LibrarySearch(r.Context(), database.LibrarySearchRequest{
+		Keywords:            req.Keywords,
+		CuisineType:         req.CuisineType,
+		DietaryRestrictions: req.DietaryRestrictions,
+		Tags:                req.Tags,
+		MaxTotalMinutes:     req.MaxTotalMinutes,
+		Limit:               req.Limit,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to search recipes")
+		return
+	}
+	if recipes == nil {
+		recipes = []models.Recipe{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"recipes": recipes,
+		"total":   len(recipes),
 	})
 }
 

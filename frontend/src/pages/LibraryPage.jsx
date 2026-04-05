@@ -1,10 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import RecipeCard from '../components/RecipeCard';
 import RecipeList from '../components/RecipeList';
 import DuplicatesModal from '../components/DuplicatesModal';
-import { useRecipes } from '../hooks/useRecipes';
-import { filterRecipes } from '../utils/fuzzyMatch';
-import { aiSearchRecipes, findDuplicates, getRecipeSuggestions, getSettings } from '../api/client';
+import { aiSearchRecipes, findDuplicates, getRecipeSuggestions, getSettings, listCuisines, listRecipes, librarySearch, deleteRecipe } from '../api/client';
 
 const CUISINE_COLORS = [
   '#c2410c', '#0d9488', '#7c3aed', '#b45309',
@@ -18,22 +16,48 @@ function cuisineColor(name) {
   return CUISINE_COLORS[hash % CUISINE_COLORS.length];
 }
 
-function CuisineGroup({ cuisine, recipes, expanded, onToggle, onDelete }) {
-  const previews = recipes.filter(r => r.image_url).slice(0, 4);
+function CuisineGroup({ cuisine, count, previewImages, expanded, onToggle, onDelete }) {
+  const [recipes, setRecipes] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const color = cuisineColor(cuisine);
+
+  useEffect(() => {
+    if (!expanded || loaded) return;
+    setLoading(true);
+    listRecipes(1000, 0, cuisine === 'Other' ? '' : cuisine)
+      .then(data => {
+        // For "Other", filter to recipes with empty cuisine_type
+        const recipes = data.recipes || [];
+        setRecipes(cuisine === 'Other' ? recipes.filter(r => !r.cuisine_type) : recipes);
+        setLoaded(true);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [expanded, loaded, cuisine]);
+
+  const handleDelete = async (id) => {
+    try {
+      await deleteRecipe(id);
+      setRecipes(prev => prev.filter(r => r.id !== id));
+      onDelete(id);
+    } catch (err) {
+      console.error('Failed to delete recipe', err);
+    }
+  };
 
   return (
     <div className={`cuisine-group${expanded ? ' cuisine-group--expanded' : ''}`}>
       <button className="cuisine-group-header" onClick={onToggle} style={{ '--cuisine-color': color }}>
         <div className="cuisine-group-info">
           <span className="cuisine-group-name">{cuisine}</span>
-          <span className="cuisine-group-count">{recipes.length} recipe{recipes.length !== 1 ? 's' : ''}</span>
+          <span className="cuisine-group-count">{count} recipe{count !== 1 ? 's' : ''}</span>
         </div>
         <div className="cuisine-group-right">
-          {!expanded && previews.length > 0 && (
+          {!expanded && previewImages.length > 0 && (
             <div className="cuisine-group-previews">
-              {previews.map(r => (
-                <img key={r.id} className="cuisine-preview-img" src={r.image_url} alt="" />
+              {previewImages.map((url, i) => (
+                <img key={i} className="cuisine-preview-img" src={url} alt="" />
               ))}
             </div>
           )}
@@ -42,11 +66,15 @@ function CuisineGroup({ cuisine, recipes, expanded, onToggle, onDelete }) {
       </button>
       {expanded && (
         <div className="cuisine-group-body">
-          <div className="recipe-list">
-            {recipes.map(recipe => (
-              <RecipeCard key={recipe.id} recipe={recipe} showLink onDelete={onDelete} />
-            ))}
-          </div>
+          {loading ? (
+            <p style={{ padding: '1rem' }}>Loading...</p>
+          ) : (
+            <div className="recipe-list">
+              {recipes.map(recipe => (
+                <RecipeCard key={recipe.id} recipe={recipe} showLink onDelete={handleDelete} />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -81,16 +109,34 @@ function SuggestedCarousel({ count }) {
 }
 
 export default function LibraryPage() {
-  const { recipes, total, loading, error, remove } = useRecipes();
+  const [cuisines, setCuisines] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [query, setQuery] = useState('');
   const [searchMode, setSearchMode] = useState('fuzzy'); // 'fuzzy' | 'ai'
-  const [aiResults, setAiResults] = useState(null); // { recipes, total, interpreted } | null
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiError, setAiError] = useState(null);
+  const [searchResults, setSearchResults] = useState(null); // { recipes, total } | null
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState(null);
   const [expandedCuisines, setExpandedCuisines] = useState(new Set());
   const [suggestionCount, setSuggestionCount] = useState(3);
-  const [dedupState, setDedupState] = useState(null); // null | 'loading' | { groups }
+  const [dedupState, setDedupState] = useState(null);
 
+  const loadCuisines = useCallback(() => {
+    setLoading(true);
+    listCuisines()
+      .then(data => {
+        setCuisines(data || []);
+        setTotal((data || []).reduce((sum, c) => sum + c.count, 0));
+        setError(null);
+      })
+      .catch(err => setError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    loadCuisines();
+  }, [loadCuisines]);
 
   useEffect(() => {
     getSettings()
@@ -102,32 +148,46 @@ export default function LibraryPage() {
       .catch(() => {});
   }, []);
 
-  // Trigger AI search on explicit submit (Enter key)
-  const handleAiSearch = () => {
-    if (!query.trim()) {
-      setAiResults(null);
-      setAiError(null);
+  const runSearch = useCallback((q) => {
+    if (!q.trim()) {
+      setSearchResults(null);
+      setSearchError(null);
       return;
     }
-    setAiLoading(true);
-    setAiError(null);
+    setSearchLoading(true);
+    setSearchError(null);
+    librarySearch({ keywords: q.trim(), limit: 200 })
+      .then(data => setSearchResults(data))
+      .catch(err => setSearchError(err.message))
+      .finally(() => setSearchLoading(false));
+  }, []);
+
+  // Debounced fuzzy search against backend
+  useEffect(() => {
+    if (searchMode !== 'fuzzy') return;
+    const timer = setTimeout(() => runSearch(query), 300);
+    return () => clearTimeout(timer);
+  }, [query, searchMode, runSearch]);
+
+  const handleAiSearch = () => {
+    if (!query.trim()) {
+      setSearchResults(null);
+      setSearchError(null);
+      return;
+    }
+    setSearchLoading(true);
+    setSearchError(null);
     aiSearchRecipes(query.trim())
-      .then(data => {
-        setAiResults(data);
-        setAiLoading(false);
-      })
-      .catch(err => {
-        setAiError(err.message || 'AI search failed');
-        setAiLoading(false);
-      });
+      .then(data => setSearchResults(data))
+      .catch(err => setSearchError(err.message))
+      .finally(() => setSearchLoading(false));
   };
 
-  // Reset AI state when switching modes
   const handleModeChange = (mode) => {
     setSearchMode(mode);
-    setAiResults(null);
-    setAiError(null);
-    setAiLoading(false);
+    setSearchResults(null);
+    setSearchError(null);
+    setSearchLoading(false);
   };
 
   const handleFindDuplicates = () => {
@@ -138,11 +198,10 @@ export default function LibraryPage() {
   };
 
   const handleDedupDeleted = (ids) => {
-    const idSet = new Set(ids);
-    ids.forEach(id => remove(id));
-    // Remove deleted recipes from all groups, then drop now-empty / singleton groups.
+    loadCuisines();
     setDedupState(prev => {
       if (!prev || !prev.groups) return null;
+      const idSet = new Set(ids);
       const groups = prev.groups
         .map(g => g.filter(r => !idSet.has(r.id)))
         .filter(g => g.length >= 2);
@@ -150,20 +209,15 @@ export default function LibraryPage() {
     });
   };
 
-  const fuzzyFiltered = filterRecipes(query, recipes);
-
-  const cuisineGroups = useMemo(() => {
-    const groups = {};
-    recipes.forEach(r => {
-      const cuisine = r.cuisine_type || 'Other';
-      if (!groups[cuisine]) groups[cuisine] = [];
-      groups[cuisine].push(r);
-    });
-    Object.values(groups).forEach(arr =>
-      arr.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-    );
-    return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
-  }, [recipes]);
+  const handleDeleteFromCuisine = () => {
+    // Refresh cuisine counts when a recipe is deleted from an expanded group
+    listCuisines()
+      .then(data => {
+        setCuisines(data || []);
+        setTotal((data || []).reduce((sum, c) => sum + c.count, 0));
+      })
+      .catch(() => {});
+  };
 
   const toggleCuisine = (cuisine) => {
     setExpandedCuisines(prev => {
@@ -174,9 +228,7 @@ export default function LibraryPage() {
   };
 
   const isSearching = query.trim().length > 0;
-  const fuzzyCount = fuzzyFiltered.length;
-  const aiCount = aiResults ? aiResults.total : 0;
-  const displayCount = searchMode === 'ai' ? aiCount : (isSearching ? fuzzyCount : total);
+  const displayCount = isSearching ? (searchResults ? searchResults.total : 0) : total;
 
   return (
     <div className="library-page">
@@ -225,18 +277,18 @@ export default function LibraryPage() {
           {isSearching
             ? `${displayCount} of ${total}`
             : total} recipe{displayCount !== 1 ? 's' : ''}
-          {aiLoading && ' · searching...'}
+          {searchLoading && ' · searching...'}
         </p>
       )}
-      {(error || aiError) && <div className="error-message">{error || aiError}</div>}
-      {searchMode === 'ai' && aiResults?.interpreted && isSearching && (
+      {(error || searchError) && <div className="error-message">{error || searchError}</div>}
+      {searchMode === 'ai' && searchResults?.interpreted && isSearching && (
         <p className="total-count" style={{ marginBottom: 12 }}>
           {[
-            aiResults.interpreted.query && `"${aiResults.interpreted.query}"`,
-            aiResults.interpreted.cuisine_type && aiResults.interpreted.cuisine_type,
-            ...(aiResults.interpreted.dietary_restrictions || []),
-            ...(aiResults.interpreted.tags || []),
-            aiResults.interpreted.max_total_minutes > 0 && `≤${aiResults.interpreted.max_total_minutes} min`,
+            searchResults.interpreted.query && `"${searchResults.interpreted.query}"`,
+            searchResults.interpreted.cuisine_type && searchResults.interpreted.cuisine_type,
+            ...(searchResults.interpreted.dietary_restrictions || []),
+            ...(searchResults.interpreted.tags || []),
+            searchResults.interpreted.max_total_minutes > 0 && `≤${searchResults.interpreted.max_total_minutes} min`,
           ].filter(Boolean).join(' · ')}
         </p>
       )}
@@ -245,35 +297,25 @@ export default function LibraryPage() {
       )}
       {loading ? (
         <p>Loading...</p>
-      ) : searchMode === 'ai' ? (
-        isSearching ? (
-          aiLoading ? null : <RecipeList recipes={aiResults?.recipes || []} onDelete={remove} searchQuery={query} />
-        ) : (
-          <div className="cuisine-groups">
-            {cuisineGroups.map(([cuisine, groupRecipes]) => (
-              <CuisineGroup
-                key={cuisine}
-                cuisine={cuisine}
-                recipes={groupRecipes}
-                expanded={expandedCuisines.has(cuisine)}
-                onToggle={() => toggleCuisine(cuisine)}
-                onDelete={remove}
-              />
-            ))}
-          </div>
-        )
       ) : isSearching ? (
-        <RecipeList recipes={fuzzyFiltered} onDelete={remove} searchQuery={query} />
+        searchLoading ? null : (
+          <RecipeList
+            recipes={searchResults?.recipes || []}
+            onDelete={() => { loadCuisines(); setSearchResults(null); setQuery(''); }}
+            searchQuery={query}
+          />
+        )
       ) : (
         <div className="cuisine-groups">
-          {cuisineGroups.map(([cuisine, groupRecipes]) => (
+          {cuisines.map(c => (
             <CuisineGroup
-              key={cuisine}
-              cuisine={cuisine}
-              recipes={groupRecipes}
-              expanded={expandedCuisines.has(cuisine)}
-              onToggle={() => toggleCuisine(cuisine)}
-              onDelete={remove}
+              key={c.cuisine_type}
+              cuisine={c.cuisine_type}
+              count={c.count}
+              previewImages={c.preview_images || []}
+              expanded={expandedCuisines.has(c.cuisine_type)}
+              onToggle={() => toggleCuisine(c.cuisine_type)}
+              onDelete={handleDeleteFromCuisine}
             />
           ))}
         </div>

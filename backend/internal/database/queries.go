@@ -127,21 +127,105 @@ func (q *Queries) GetRecipe(ctx context.Context, id int) (*models.Recipe, error)
 	return r, nil
 }
 
-func (q *Queries) ListRecipes(ctx context.Context, limit, offset int) ([]models.Recipe, int, error) {
+// CuisineMeta holds lightweight metadata for one cuisine group.
+type CuisineMeta struct {
+	CuisineType   string   `json:"cuisine_type"`
+	Count         int      `json:"count"`
+	PreviewImages []string `json:"preview_images"`
+}
+
+// ListCuisines returns per-cuisine counts and up to 4 preview image URLs.
+func (q *Queries) ListCuisines(ctx context.Context) ([]CuisineMeta, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT
+			CASE WHEN cuisine_type = '' OR cuisine_type IS NULL THEN 'Other' ELSE cuisine_type END AS ct,
+			COUNT(*) AS cnt
+		FROM recipes
+		GROUP BY ct
+		ORDER BY ct`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []CuisineMeta
+	for rows.Next() {
+		var m CuisineMeta
+		if err := rows.Scan(&m.CuisineType, &m.Count); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Fetch up to 4 preview images per cuisine in a second pass.
+	for i, m := range out {
+		cuisine := m.CuisineType
+		var imgRows pgx.Rows
+		var imgErr error
+		if cuisine == "Other" {
+			imgRows, imgErr = q.pool.Query(ctx,
+				`SELECT image_url FROM recipes WHERE (cuisine_type = '' OR cuisine_type IS NULL) AND image_url IS NOT NULL AND image_url != '' ORDER BY created_at DESC LIMIT 4`)
+		} else {
+			imgRows, imgErr = q.pool.Query(ctx,
+				`SELECT image_url FROM recipes WHERE cuisine_type = $1 AND image_url IS NOT NULL AND image_url != '' ORDER BY created_at DESC LIMIT 4`,
+				cuisine)
+		}
+		if imgErr != nil {
+			return nil, imgErr
+		}
+		var imgs []string
+		for imgRows.Next() {
+			var url string
+			if err := imgRows.Scan(&url); err != nil {
+				imgRows.Close()
+				return nil, err
+			}
+			imgs = append(imgs, url)
+		}
+		imgRows.Close()
+		if err := imgRows.Err(); err != nil {
+			return nil, err
+		}
+		out[i].PreviewImages = imgs
+	}
+
+	return out, nil
+}
+
+func (q *Queries) ListRecipes(ctx context.Context, limit, offset int, cuisineType string) ([]models.Recipe, int, error) {
 	if limit <= 0 {
 		limit = 20
 	}
 
 	var total int
-	if err := q.pool.QueryRow(ctx, "SELECT COUNT(*) FROM recipes").Scan(&total); err != nil {
+	var err error
+	if cuisineType != "" {
+		err = q.pool.QueryRow(ctx, "SELECT COUNT(*) FROM recipes WHERE cuisine_type = $1", cuisineType).Scan(&total)
+	} else {
+		err = q.pool.QueryRow(ctx, "SELECT COUNT(*) FROM recipes").Scan(&total)
+	}
+	if err != nil {
 		return nil, 0, err
 	}
 
-	rows, err := q.pool.Query(ctx, `
-		SELECT id, title, description, cuisine_type, prep_time_minutes, cook_time_minutes,
-			servings, difficulty, ingredients, instructions, dietary_restrictions, tags,
-			generated_by_model, generation_prompt, COALESCE(image_url, ''), created_at, updated_at
-		FROM recipes ORDER BY created_at DESC LIMIT $1 OFFSET $2`, limit, offset)
+	var rows pgx.Rows
+	if cuisineType != "" {
+		rows, err = q.pool.Query(ctx, `
+			SELECT id, title, description, cuisine_type, prep_time_minutes, cook_time_minutes,
+				servings, difficulty, ingredients, instructions, dietary_restrictions, tags,
+				generated_by_model, generation_prompt, COALESCE(image_url, ''), created_at, updated_at
+			FROM recipes WHERE cuisine_type = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+			cuisineType, limit, offset)
+	} else {
+		rows, err = q.pool.Query(ctx, `
+			SELECT id, title, description, cuisine_type, prep_time_minutes, cook_time_minutes,
+				servings, difficulty, ingredients, instructions, dietary_restrictions, tags,
+				generated_by_model, generation_prompt, COALESCE(image_url, ''), created_at, updated_at
+			FROM recipes ORDER BY created_at DESC LIMIT $1 OFFSET $2`, limit, offset)
+	}
 	if err != nil {
 		return nil, 0, err
 	}

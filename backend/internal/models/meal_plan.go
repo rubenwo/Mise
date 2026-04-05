@@ -35,7 +35,8 @@ type UpdateMealPlanRequest struct {
 }
 
 type RandomizeRequest struct {
-	Servings []int `json:"servings"`
+	Servings    []int `json:"servings"`
+	ExcludedIDs []int `json:"excluded_ids,omitempty"`
 }
 
 type AggregatedIngredient struct {

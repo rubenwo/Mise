@@ -1141,10 +1141,20 @@ func (h *MealPlanHandler) Randomize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Split into new (never eaten) and eaten pools, excluding already-selected recipes
-	var newPool, eatenPool []database.RecipeSummary
+	excludedIDs := make(map[int]bool, len(req.ExcludedIDs))
+	for _, id := range req.ExcludedIDs {
+		excludedIDs[id] = true
+	}
+
+	// Split into new (never eaten), eaten, and excluded pools, excluding already-selected recipes.
+	// Excluded recipes are ones the user manually removed from this plan — they go into a last-resort pool.
+	var newPool, eatenPool, excludedPool []database.RecipeSummary
 	for _, s := range summaries {
 		if existingIDs[s.ID] {
+			continue
+		}
+		if excludedIDs[s.ID] {
+			excludedPool = append(excludedPool, s)
 			continue
 		}
 		if eaten[s.ID] {
@@ -1172,6 +1182,11 @@ func (h *MealPlanHandler) Randomize(w http.ResponseWriter, r *http.Request) {
 
 	selected := selectDiverse(newPool, newTarget)
 	selected = append(selected, selectDiverse(eatenPool, eatenTarget)...)
+
+	// If we still need more recipes (excluded pool was the only option), fall back to it
+	if stillNeeded := needed - len(selected); stillNeeded > 0 {
+		selected = append(selected, selectDiverse(excludedPool, stillNeeded)...)
+	}
 
 	// Shuffle the final selection so new and eaten are interleaved
 	rand.Shuffle(len(selected), func(i, j int) {
