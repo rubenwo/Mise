@@ -9,6 +9,7 @@ import {
 import RecipeCard from '../components/RecipeCard';
 import AHOrderModal from '../components/AHOrderModal';
 import CookingChat from '../components/CookingChat';
+import StarRating, { StarRatingReadOnly } from '../components/StarRating';
 import { useInventory } from '../hooks/useInventory';
 import { matchIngredients, stockSummary } from '../utils/inventoryMatch';
 
@@ -242,6 +243,12 @@ function PlanDetail({ planId }) {
     setPlan(updated);
   };
 
+  // rating: 1-10 sets, 0 clears, called only when current.completed is true.
+  const handleRate = async (recipeId, rating) => {
+    const updated = await updatePlanRecipe(planId, recipeId, { rating });
+    setPlan(updated);
+  };
+
   const handleEndPeriod = async () => {
     const updated = await updatePlan(planId, { status: 'completed' });
     setPlan(updated);
@@ -282,10 +289,13 @@ function PlanDetail({ planId }) {
         <ActivePlanView
           plan={plan}
           onComplete={handleComplete}
+          onRate={handleRate}
           onEnd={handleEndPeriod}
           completedCount={completedCount}
         />
       )}
+
+      {isCompleted && <CompletedPlanView plan={plan} />}
 
       {isDraft && loadingIngredients && (
         <div className="plan-section plan-loading">
@@ -401,11 +411,6 @@ function PlanDetail({ planId }) {
         </>
       )}
 
-      {isCompleted && (
-        <div className="plan-section">
-          <p className="empty-state">This plan is completed. All {(plan.recipes || []).length} recipes done.</p>
-        </div>
-      )}
     </div>
   );
 }
@@ -522,7 +527,7 @@ function IngredientSummary({ ingredients, planId }) {
   );
 }
 
-function ActivePlanView({ plan, onComplete, onEnd, completedCount }) {
+function ActivePlanView({ plan, onComplete, onRate, onEnd, completedCount }) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const recipes = plan.recipes || [];
   const total = recipes.length;
@@ -566,6 +571,14 @@ function ActivePlanView({ plan, onComplete, onEnd, completedCount }) {
         >
           {current.completed ? 'Mark as Not Done' : 'Mark as Done'}
         </button>
+        {current.completed && (
+          <div className="active-plan-rating">
+            <StarRating
+              value={current.rating ?? null}
+              onChange={(rating) => onRate(current.recipe_id, rating)}
+            />
+          </div>
+        )}
         <CookingChat key={current.recipe_id} recipeId={current.recipe_id} />
       </div>
 
@@ -574,6 +587,59 @@ function ActivePlanView({ plan, onComplete, onEnd, completedCount }) {
           End Period
         </button>
       )}
+    </div>
+  );
+}
+
+// CompletedPlanView is the read-only view shown after a plan is ended.
+// Lists every recipe with its done/skipped state, the date you cooked it,
+// and the rating you gave it.
+function CompletedPlanView({ plan }) {
+  const recipes = plan.recipes || [];
+  const doneCount = recipes.filter(r => r.completed).length;
+  const ratedCount = recipes.filter(r => r.rating != null).length;
+  const avgRating = ratedCount > 0
+    ? recipes.reduce((sum, r) => sum + (r.rating || 0), 0) / ratedCount
+    : null;
+
+  const formatDate = (iso) => {
+    if (!iso) return null;
+    return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
+  return (
+    <div className="completed-plan">
+      <div className="completed-plan-summary">
+        <span><strong>{doneCount}</strong> of {recipes.length} cooked</span>
+        {avgRating != null && (
+          <span> · avg rating <strong>{avgRating.toFixed(1)}/10</strong> ({ratedCount} rated)</span>
+        )}
+      </div>
+
+      <ul className="completed-plan-list">
+        {recipes.map(mpr => (
+          <li key={mpr.recipe_id} className={`completed-plan-item${mpr.completed ? '' : ' completed-plan-item-skipped'}`}>
+            <div className="completed-plan-item-main">
+              <Link to={`/recipe/${mpr.recipe_id}`} className="completed-plan-title">
+                {mpr.recipe?.title || `Recipe ${mpr.recipe_id}`}
+              </Link>
+              {mpr.recipe?.cuisine_type && (
+                <span className="cuisine-badge">{mpr.recipe.cuisine_type}</span>
+              )}
+            </div>
+            <div className="completed-plan-item-meta">
+              {mpr.completed
+                ? <span className="completed-plan-status completed-plan-status-done">✓ cooked{mpr.completed_at && ` · ${formatDate(mpr.completed_at)}`}</span>
+                : <span className="completed-plan-status completed-plan-status-skipped">✗ not cooked</span>}
+              {mpr.completed && (
+                <div className="completed-plan-rating">
+                  <StarRatingReadOnly value={mpr.rating ?? null} />
+                </div>
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

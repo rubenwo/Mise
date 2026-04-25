@@ -999,6 +999,37 @@ a, button, input, select, textarea { transition: all 0.15s ease; }
 .active-plan-servings { margin-top: 12px; font-size: 13px; color: var(--text-secondary); }
 .servings-note { font-weight: 400; }
 .active-plan-complete-btn { width: 100%; justify-content: center; margin-top: 16px; padding: 11px; font-size: 14px; }
+.active-plan-rating { margin-top: 16px; padding: 12px 14px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; }
+
+/* ── Star Rating ──────────────────────────────────────── */
+.star-rating { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.star-rating-stars { display: inline-flex; gap: 2px; }
+.star-rating-star { background: none; border: none; padding: 2px 1px; font-size: 22px; line-height: 1; cursor: pointer; color: #d1d5db; transition: color 0.1s, transform 0.1s; }
+.star-rating-star:hover { transform: scale(1.15); }
+.star-rating-star:disabled { cursor: default; opacity: 0.7; }
+.star-rating-star-filled { color: #f59e0b; }
+.star-rating-label { font-size: 12px; color: var(--text-secondary); min-height: 16px; }
+.star-rating-prompt { font-style: italic; opacity: 0.7; }
+.star-rating-readonly { display: inline-flex; align-items: center; gap: 6px; }
+.star-rating-readonly-stars { font-size: 13px; line-height: 1; color: #d1d5db; letter-spacing: 1px; }
+.star-rating-readonly-stars .star-rating-star-filled { color: #f59e0b; }
+.star-rating-readonly-num { font-size: 12px; color: var(--text-secondary); font-weight: 600; }
+.star-rating-empty { font-size: 12px; color: var(--text-secondary); font-style: italic; opacity: 0.7; }
+
+/* ── Completed Plan View ──────────────────────────────── */
+.completed-plan { margin-top: 8px; }
+.completed-plan-summary { padding: 14px 18px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 16px; font-size: 13px; color: var(--text-secondary); }
+.completed-plan-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.completed-plan-item { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
+.completed-plan-item-skipped { opacity: 0.55; }
+.completed-plan-item-main { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+.completed-plan-title { font-weight: 600; color: var(--text); text-decoration: none; }
+.completed-plan-title:hover { color: var(--primary); text-decoration: underline; }
+.completed-plan-item-meta { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
+.completed-plan-status { font-size: 12px; font-weight: 600; }
+.completed-plan-status-done { color: var(--success); }
+.completed-plan-status-skipped { color: var(--text-secondary); }
+.completed-plan-rating { font-size: 12px; }
 
 /* ── Ingredient Summary ───────────────────────────────── */
 .ingredient-summary { margin-top: 20px; background: var(--bg); border-radius: 8px; padding: 20px; border: 1px solid var(--border); }
