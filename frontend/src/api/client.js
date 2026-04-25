@@ -219,6 +219,17 @@ export function findDuplicates() {
   return request('/recipes/duplicates');
 }
 
+// Per-recipe history: every plan it has appeared on, with completion + rating.
+export function getRecipeHistory(id) {
+  return request(`/recipes/${id}/history`);
+}
+
+// Library-wide aggregate: count, last-cooked, avg rating per recipe.
+// Returns an array; consumers index by recipe_id client-side.
+export function listRecipeEatCounts() {
+  return request('/recipes/eat-counts');
+}
+
 export function runTranslationNow() {
   return request('/settings/translation/run', { method: 'POST' });
 }

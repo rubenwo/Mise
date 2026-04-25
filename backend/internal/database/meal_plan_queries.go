@@ -51,6 +51,7 @@ func (q *Queries) GetMealPlan(ctx context.Context, id int) (*models.MealPlan, er
 
 	rows, err := q.pool.Query(ctx, `
 		SELECT mpr.id, mpr.recipe_id, mpr.servings, mpr.sort_order, mpr.completed,
+			mpr.completed_at, mpr.rating,
 			r.id, r.title, r.description, r.cuisine_type, r.prep_time_minutes, r.cook_time_minutes,
 			r.servings, r.difficulty, r.ingredients, r.instructions, r.dietary_restrictions, r.tags,
 			r.generated_by_model, r.generation_prompt, COALESCE(r.image_url, ''), r.created_at, r.updated_at
@@ -66,8 +67,10 @@ func (q *Queries) GetMealPlan(ctx context.Context, id int) (*models.MealPlan, er
 	for rows.Next() {
 		var mpr models.MealPlanRecipe
 		var ingredientsJSON, instructionsJSON []byte
+		var ratingNullable *int16
 		if err := rows.Scan(
 			&mpr.ID, &mpr.RecipeID, &mpr.Servings, &mpr.SortOrder, &mpr.Completed,
+			&mpr.CompletedAt, &ratingNullable,
 			&mpr.Recipe.ID, &mpr.Recipe.Title, &mpr.Recipe.Description, &mpr.Recipe.CuisineType,
 			&mpr.Recipe.PrepTimeMinutes, &mpr.Recipe.CookTimeMinutes, &mpr.Recipe.Servings,
 			&mpr.Recipe.Difficulty, &ingredientsJSON, &instructionsJSON,
@@ -76,6 +79,10 @@ func (q *Queries) GetMealPlan(ctx context.Context, id int) (*models.MealPlan, er
 			&mpr.Recipe.ImageURL, &mpr.Recipe.CreatedAt, &mpr.Recipe.UpdatedAt,
 		); err != nil {
 			return nil, err
+		}
+		if ratingNullable != nil {
+			r := int(*ratingNullable)
+			mpr.Rating = &r
 		}
 		if err := json.Unmarshal(ingredientsJSON, &mpr.Recipe.Ingredients); err != nil {
 			return nil, fmt.Errorf("unmarshaling ingredients: %w", err)
@@ -237,7 +244,11 @@ func (q *Queries) InvalidatePlanIngredients(ctx context.Context, planID int) err
 	return err
 }
 
-func (q *Queries) UpdatePlanRecipe(ctx context.Context, planID, recipeID int, servings *int, completed *bool) error {
+// UpdatePlanRecipe applies any subset of {servings, completed, rating} to one row.
+// Toggling completed=true also stamps completed_at = NOW().
+// Toggling completed=false clears both completed_at AND rating (rating-without-eaten makes no sense).
+// Rating semantics: nil = leave alone, 0 = clear, 1-10 = set.
+func (q *Queries) UpdatePlanRecipe(ctx context.Context, planID, recipeID int, servings *int, completed *bool, rating *int) error {
 	if servings != nil {
 		if _, err := q.pool.Exec(ctx, `
 			UPDATE meal_plan_recipes SET servings = $3 WHERE meal_plan_id = $1 AND recipe_id = $2`,
@@ -246,11 +257,98 @@ func (q *Queries) UpdatePlanRecipe(ctx context.Context, planID, recipeID int, se
 		}
 	}
 	if completed != nil {
+		if *completed {
+			if _, err := q.pool.Exec(ctx, `
+				UPDATE meal_plan_recipes
+				SET completed = TRUE,
+				    completed_at = COALESCE(completed_at, NOW())
+				WHERE meal_plan_id = $1 AND recipe_id = $2`,
+				planID, recipeID); err != nil {
+				return err
+			}
+		} else {
+			if _, err := q.pool.Exec(ctx, `
+				UPDATE meal_plan_recipes
+				SET completed = FALSE, completed_at = NULL, rating = NULL
+				WHERE meal_plan_id = $1 AND recipe_id = $2`,
+				planID, recipeID); err != nil {
+				return err
+			}
+		}
+	}
+	if rating != nil {
+		var ratingValue any
+		if *rating == 0 {
+			ratingValue = nil
+		} else {
+			if *rating < 1 || *rating > 10 {
+				return fmt.Errorf("rating must be 0 (clear) or 1-10, got %d", *rating)
+			}
+			ratingValue = *rating
+		}
 		if _, err := q.pool.Exec(ctx, `
-			UPDATE meal_plan_recipes SET completed = $3 WHERE meal_plan_id = $1 AND recipe_id = $2`,
-			planID, recipeID, *completed); err != nil {
+			UPDATE meal_plan_recipes SET rating = $3 WHERE meal_plan_id = $1 AND recipe_id = $2`,
+			planID, recipeID, ratingValue); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// GetRecipeHistory returns every plan a recipe has appeared on, newest cooked first.
+// Plans where the recipe was never marked done sort to the bottom (NULLS LAST).
+func (q *Queries) GetRecipeHistory(ctx context.Context, recipeID int) ([]models.RecipeHistoryEntry, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT mp.id, mp.name, mp.status, mpr.completed, mpr.completed_at, mpr.rating
+		FROM meal_plan_recipes mpr
+		JOIN meal_plans mp ON mp.id = mpr.meal_plan_id
+		WHERE mpr.recipe_id = $1
+		ORDER BY mpr.completed_at DESC NULLS LAST, mp.created_at DESC`, recipeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []models.RecipeHistoryEntry
+	for rows.Next() {
+		var e models.RecipeHistoryEntry
+		var ratingNullable *int16
+		if err := rows.Scan(&e.PlanID, &e.PlanName, &e.PlanStatus, &e.Completed, &e.CompletedAt, &ratingNullable); err != nil {
+			return nil, err
+		}
+		if ratingNullable != nil {
+			r := int(*ratingNullable)
+			e.Rating = &r
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// ListRecipeEatCounts returns one stats row per recipe that has been completed
+// at least once. Recipes that were never marked done are absent from the result.
+func (q *Queries) ListRecipeEatCounts(ctx context.Context) ([]models.RecipeEatStats, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT recipe_id,
+			COUNT(*) AS eat_count,
+			MAX(completed_at) AS last_cooked_at,
+			AVG(rating)::float8 AS avg_rating,
+			COUNT(rating) AS rated_count
+		FROM meal_plan_recipes
+		WHERE completed = TRUE
+		GROUP BY recipe_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []models.RecipeEatStats
+	for rows.Next() {
+		var s models.RecipeEatStats
+		if err := rows.Scan(&s.RecipeID, &s.Count, &s.LastCookedAt, &s.AvgRating, &s.RatedCount); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
 }

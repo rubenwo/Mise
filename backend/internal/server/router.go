@@ -32,10 +32,12 @@ func NewRouter(h *handlers.RecipeHandler, g *handlers.GenerateHandler, mp *handl
 		r.Get("/recipes/cuisines", h.ListCuisines)
 		r.Get("/recipes/suggestions", h.Suggestions)
 		r.Get("/recipes/duplicates", h.FindDuplicates)
+		r.Get("/recipes/eat-counts", h.EatCounts)
 		r.Get("/recipes/{id}", h.Get)
 		r.Patch("/recipes/{id}", h.Update)
 		r.Delete("/recipes/{id}", h.Delete)
 		r.Post("/recipes/{id}/fetch-image", h.FetchImage)
+		r.Get("/recipes/{id}/history", h.History)
 		r.Get("/recipes/{id}/chat", ch.GetHistory)
 		r.Post("/recipes/{id}/chat", ch.SendMessage)
 

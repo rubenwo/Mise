@@ -12,12 +12,14 @@ type MealPlan struct {
 }
 
 type MealPlanRecipe struct {
-	ID        int    `json:"id"`
-	RecipeID  int    `json:"recipe_id"`
-	Servings  int    `json:"servings"`
-	SortOrder int    `json:"sort_order"`
-	Completed bool   `json:"completed"`
-	Recipe    Recipe `json:"recipe"`
+	ID          int        `json:"id"`
+	RecipeID    int        `json:"recipe_id"`
+	Servings    int        `json:"servings"`
+	SortOrder   int        `json:"sort_order"`
+	Completed   bool       `json:"completed"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
+	Rating      *int       `json:"rating,omitempty"`
+	Recipe      Recipe     `json:"recipe"`
 }
 
 type AddPlanRecipeRequest struct {
@@ -25,9 +27,34 @@ type AddPlanRecipeRequest struct {
 	Servings int `json:"servings"`
 }
 
+// UpdatePlanRecipeRequest carries optional updates for one plan-recipe row.
+// Rating: omit = leave alone; 0 = clear; 1-10 = set.
+// Completed=false clears completed_at and rating regardless of Rating.
 type UpdatePlanRecipeRequest struct {
 	Servings  *int  `json:"servings,omitempty"`
 	Completed *bool `json:"completed,omitempty"`
+	Rating    *int  `json:"rating,omitempty"`
+}
+
+// RecipeHistoryEntry represents one occurrence of a recipe on a meal plan,
+// returned by GET /api/recipes/{id}/history.
+type RecipeHistoryEntry struct {
+	PlanID      int        `json:"plan_id"`
+	PlanName    string     `json:"plan_name"`
+	PlanStatus  string     `json:"plan_status"`
+	Completed   bool       `json:"completed"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
+	Rating      *int       `json:"rating,omitempty"`
+}
+
+// RecipeEatStats aggregates completion data across all plans for one recipe,
+// returned (per recipe ID) by GET /api/recipes/eat-counts.
+type RecipeEatStats struct {
+	RecipeID     int        `json:"recipe_id"`
+	Count        int        `json:"count"`
+	LastCookedAt *time.Time `json:"last_cooked_at,omitempty"`
+	AvgRating    *float64   `json:"avg_rating,omitempty"`
+	RatedCount   int        `json:"rated_count"`
 }
 
 type UpdateMealPlanRequest struct {

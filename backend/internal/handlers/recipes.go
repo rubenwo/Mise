@@ -389,6 +389,39 @@ func (h *RecipeHandler) FetchImage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"image_url": imageURL})
 }
 
+// History returns every plan a recipe has appeared on, with completion data
+// and rating. Newest cooked first; never-cooked plans last.
+func (h *RecipeHandler) History(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	entries, err := h.queries.GetRecipeHistory(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to get recipe history")
+		return
+	}
+	if entries == nil {
+		entries = []models.RecipeHistoryEntry{}
+	}
+	writeJSON(w, http.StatusOK, entries)
+}
+
+// EatCounts returns aggregated completion stats across the whole library.
+// Frontend caches this once per session for the library-card badges.
+func (h *RecipeHandler) EatCounts(w http.ResponseWriter, r *http.Request) {
+	stats, err := h.queries.ListRecipeEatCounts(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to get eat counts")
+		return
+	}
+	if stats == nil {
+		stats = []models.RecipeEatStats{}
+	}
+	writeJSON(w, http.StatusOK, stats)
+}
+
 func (h *RecipeHandler) Suggestions(w http.ResponseWriter, r *http.Request) {
 	count, _ := strconv.Atoi(r.URL.Query().Get("count"))
 	if count <= 0 {
