@@ -15,8 +15,30 @@ var KnownCuisines = []string{
 	"American", "Argentine", "Brazilian", "British", "Caribbean",
 	"Chinese", "Dutch", "Eastern European", "Ethiopian", "Filipino",
 	"French", "German", "Indian", "Italian", "Japanese", "Korean",
-	"Mediterranean", "Mexican", "Middle Eastern", "Moroccan", "Peruvian",
+	"Malaysian", "Mediterranean", "Mexican", "Middle Eastern", "Moroccan", "Peruvian",
 	"Scandinavian", "Spanish", "Thai", "Turkish", "Vietnamese",
+}
+
+// cuisineAliases maps non-canonical cuisine names to their canonical form.
+// All Malay, Nyonya, and Peranakan variants are unified under "Malaysian".
+var cuisineAliases = map[string]string{
+	"malay":            "Malaysian",
+	"malaysian":        "Malaysian",
+	"nyonya":           "Malaysian",
+	"nonya":            "Malaysian",
+	"peranakan":        "Malaysian",
+	"nyonya peranakan": "Malaysian",
+	"nonya peranakan":  "Malaysian",
+	"malay/nyonya":     "Malaysian",
+}
+
+// NormalizeCuisine maps cuisine aliases to their canonical name.
+// Returns the input unchanged if no alias is found.
+func NormalizeCuisine(cuisine string) string {
+	if canonical, ok := cuisineAliases[strings.ToLower(strings.TrimSpace(cuisine))]; ok {
+		return canonical
+	}
+	return cuisine
 }
 
 // SeedCuisineCounts returns a copy of counts that includes every KnownCuisine

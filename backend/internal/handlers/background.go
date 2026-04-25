@@ -186,6 +186,7 @@ func (b *BackgroundGenerator) runGeneration(ctx context.Context, count, servings
 			continue
 		}
 
+		recipe.CuisineType = llm.NormalizeCuisine(recipe.CuisineType)
 		if err := b.queries.CreatePendingRecipe(ctx, recipe); err != nil {
 			log.Printf("Background generation: failed to save pending recipe %q: %v", recipe.Title, err)
 			continue
