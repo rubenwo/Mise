@@ -2,6 +2,14 @@ import { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { getChatHistory, sendChatMessage } from '../api/client';
 
+// crypto.randomUUID is only defined in secure contexts (https / localhost),
+// which broke chat submission when the app is opened over plain HTTP on a
+// LAN IP. These IDs are just React keys, so a non-crypto fallback is fine.
+const newMsgId = () =>
+  (typeof crypto !== 'undefined' && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+
 export default function CookingChat({ recipeId }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -30,10 +38,8 @@ export default function CookingChat({ recipeId }) {
 
     shouldScrollRef.current = true;
     setInput('');
-    // crypto.randomUUID guarantees no collision between rapid sends — earlier
-    // tempId+1 logic clashed if the user re-sent within the same millisecond.
-    const userMsgId = crypto.randomUUID();
-    const replyMsgId = crypto.randomUUID();
+    const userMsgId = newMsgId();
+    const replyMsgId = newMsgId();
     setMessages(prev => [...prev, { id: userMsgId, role: 'user', content: message }]);
     setLoading(true);
 
