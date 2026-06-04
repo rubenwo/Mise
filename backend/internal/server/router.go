@@ -26,7 +26,7 @@ func NewRouter(h *handlers.RecipeHandler, g *handlers.GenerateHandler, mp *handl
 		r.Get("/recipes", h.List)
 		r.Post("/recipes", h.Create)
 		r.Post("/recipes/search", h.Search)
-		r.Post("/recipes/ai-search", h.AISearch)
+		r.Post("/recipes/recommend", h.RecommendChat)
 		r.Post("/recipes/library-search", h.LibrarySearchDirect)
 		r.Post("/recipes/preview-image", h.PreviewImage)
 		r.Get("/recipes/cuisines", h.ListCuisines)

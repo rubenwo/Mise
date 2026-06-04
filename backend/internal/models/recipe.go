@@ -64,11 +64,6 @@ type SearchRequest struct {
 	Offset              int      `json:"offset"`
 }
 
-type AISearchRequest struct {
-	Query string `json:"query"`
-	Limit int    `json:"limit"`
-}
-
 type ChatMessage struct {
 	ID        int       `json:"id"`
 	RecipeID  int       `json:"recipe_id"`

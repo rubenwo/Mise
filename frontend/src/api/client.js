@@ -70,10 +70,10 @@ export function searchRecipes(params) {
   });
 }
 
-export function aiSearchRecipes(query, limit = 50) {
-  return request('/recipes/ai-search', {
+export function recommendRecipes(messages, limit) {
+  return request('/recipes/recommend', {
     method: 'POST',
-    body: JSON.stringify({ query, limit }),
+    body: JSON.stringify({ messages, limit }),
   });
 }
 

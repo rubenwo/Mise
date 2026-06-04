@@ -2,7 +2,8 @@ import { useEffect, useState, useCallback } from 'react';
 import RecipeCard from '../components/RecipeCard';
 import RecipeList from '../components/RecipeList';
 import DuplicatesModal from '../components/DuplicatesModal';
-import { aiSearchRecipes, findDuplicates, getRecipeSuggestions, getSettings, listCuisines, listRecipes, librarySearch, deleteRecipe } from '../api/client';
+import LibraryRecommendChat from '../components/LibraryRecommendChat';
+import { findDuplicates, getRecipeSuggestions, getSettings, listCuisines, listRecipes, librarySearch, deleteRecipe } from '../api/client';
 
 const CUISINE_COLORS = [
   '#c2410c', '#0d9488', '#7c3aed', '#b45309',
@@ -114,7 +115,7 @@ export default function LibraryPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [query, setQuery] = useState('');
-  const [searchMode, setSearchMode] = useState('fuzzy'); // 'fuzzy' | 'ai'
+  const [searchMode, setSearchMode] = useState('fuzzy'); // 'fuzzy' | 'recommend'
   const [searchResults, setSearchResults] = useState(null); // { recipes, total } | null
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState(null);
@@ -169,25 +170,12 @@ export default function LibraryPage() {
     return () => clearTimeout(timer);
   }, [query, searchMode, runSearch]);
 
-  const handleAiSearch = () => {
-    if (!query.trim()) {
-      setSearchResults(null);
-      setSearchError(null);
-      return;
-    }
-    setSearchLoading(true);
-    setSearchError(null);
-    aiSearchRecipes(query.trim())
-      .then(data => setSearchResults(data))
-      .catch(err => setSearchError(err.message))
-      .finally(() => setSearchLoading(false));
-  };
-
   const handleModeChange = (mode) => {
     setSearchMode(mode);
     setSearchResults(null);
     setSearchError(null);
     setSearchLoading(false);
+    if (mode !== 'fuzzy') setQuery('');
   };
 
   const handleFindDuplicates = () => {
@@ -227,7 +215,8 @@ export default function LibraryPage() {
     });
   };
 
-  const isSearching = query.trim().length > 0;
+  const isRecommend = searchMode === 'recommend';
+  const isSearching = !isRecommend && query.trim().length > 0;
   const displayCount = isSearching ? (searchResults ? searchResults.total : 0) : total;
 
   return (
@@ -249,15 +238,6 @@ export default function LibraryPage() {
           onDeleted={handleDedupDeleted}
         />
       )}
-      <div className="search-bar">
-        <input
-          type="text"
-          placeholder={searchMode === 'ai' ? 'Describe what you\'re looking for...' : 'Search recipes...'}
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          onKeyDown={e => { if (searchMode === 'ai' && e.key === 'Enter') handleAiSearch(); }}
-        />
-      </div>
       <div className="mode-toggle">
         <button
           className={searchMode === 'fuzzy' ? 'active' : ''}
@@ -266,13 +246,23 @@ export default function LibraryPage() {
           Keyword
         </button>
         <button
-          className={searchMode === 'ai' ? 'active' : ''}
-          onClick={() => handleModeChange('ai')}
+          className={searchMode === 'recommend' ? 'active' : ''}
+          onClick={() => handleModeChange('recommend')}
         >
-          AI Search
+          Recommend
         </button>
       </div>
-      {total > 0 && (
+      {!isRecommend && (
+        <div className="search-bar">
+          <input
+            type="text"
+            placeholder="Search recipes..."
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+          />
+        </div>
+      )}
+      {total > 0 && !isRecommend && (
         <p className="total-count">
           {isSearching
             ? `${displayCount} of ${total}`
@@ -281,21 +271,15 @@ export default function LibraryPage() {
         </p>
       )}
       {(error || searchError) && <div className="error-message">{error || searchError}</div>}
-      {searchMode === 'ai' && searchResults?.interpreted && isSearching && (
-        <p className="total-count" style={{ marginBottom: 12 }}>
-          {[
-            searchResults.interpreted.query && `"${searchResults.interpreted.query}"`,
-            searchResults.interpreted.cuisine_type && searchResults.interpreted.cuisine_type,
-            ...(searchResults.interpreted.dietary_restrictions || []),
-            ...(searchResults.interpreted.tags || []),
-            searchResults.interpreted.max_total_minutes > 0 && `≤${searchResults.interpreted.max_total_minutes} min`,
-          ].filter(Boolean).join(' · ')}
-        </p>
-      )}
-      {!isSearching && !loading && total >= suggestionCount && (
+      {!isSearching && !isRecommend && !loading && total >= suggestionCount && (
         <SuggestedCarousel count={suggestionCount} />
       )}
-      {loading ? (
+      {isRecommend ? (
+        <LibraryRecommendChat
+          limit={suggestionCount}
+          onDeleteRecipe={() => loadCuisines()}
+        />
+      ) : loading ? (
         <p>Loading...</p>
       ) : isSearching ? (
         searchLoading ? null : (
