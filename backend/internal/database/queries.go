@@ -452,7 +452,7 @@ func (q *Queries) GetRecipesByIDs(ctx context.Context, ids []int) ([]models.Reci
 
 // LibrarySearchRequest holds parameters for the comprehensive library search.
 type LibrarySearchRequest struct {
-	Keywords            string   // space-separated words; each word must match somewhere
+	Keywords            string // space-separated words; each word must match somewhere
 	CuisineType         string
 	DietaryRestrictions []string
 	Tags                []string

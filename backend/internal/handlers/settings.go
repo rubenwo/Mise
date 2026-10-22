@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -9,7 +10,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/rubenwo/mise/internal/database"
 	"github.com/rubenwo/mise/internal/llm"
@@ -38,8 +38,7 @@ func (h *SettingsHandler) ListProviders(w http.ResponseWriter, r *http.Request) 
 
 func (h *SettingsHandler) CreateProvider(w http.ResponseWriter, r *http.Request) {
 	var p models.OllamaProvider
-	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &p) {
 		return
 	}
 	if p.Name == "" || p.Host == "" || p.Model == "" {
@@ -57,15 +56,13 @@ func (h *SettingsHandler) CreateProvider(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *SettingsHandler) UpdateProvider(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id", "invalid id")
+	if !ok {
 		return
 	}
 
 	var p models.OllamaProvider
-	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &p) {
 		return
 	}
 	p.ID = id
@@ -76,7 +73,7 @@ func (h *SettingsHandler) UpdateProvider(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := h.queries.UpdateOllamaProvider(r.Context(), &p); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "provider not found")
 			return
 		}
@@ -89,14 +86,13 @@ func (h *SettingsHandler) UpdateProvider(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *SettingsHandler) DeleteProvider(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id", "invalid id")
+	if !ok {
 		return
 	}
 
 	if err := h.queries.DeleteOllamaProvider(r.Context(), id); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "provider not found")
 			return
 		}
@@ -158,8 +154,7 @@ var allowedSettingKeys = map[string]struct{}{
 
 func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	var updates map[string]string
-	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &updates) {
 		return
 	}
 

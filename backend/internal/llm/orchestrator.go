@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/rubenwo/mise/internal/models"
@@ -177,7 +177,6 @@ func (o *Orchestrator) GenerateRefine(ctx context.Context, userPrompt string, ev
 	return recipe, messages, nil
 }
 
-
 // CookingChat handles a single conversational turn for the cooking assistant.
 // It uses the full recipe as system context and has access to web search tools.
 func (o *Orchestrator) CookingChat(ctx context.Context, systemContext string, history []Message, userMessage string) (string, error) {
@@ -313,7 +312,7 @@ func (o *Orchestrator) DeduplicateIngredients(ctx context.Context, groups [][]mo
 		for r := range recipeSet {
 			recipes = append(recipes, r)
 		}
-		sort.Strings(recipes)
+		slices.Sort(recipes)
 
 		name := strings.TrimSpace(item.Name)
 		if len(name) > 0 {

@@ -15,25 +15,25 @@ type unitConversion struct {
 
 // imperialToMetric maps common non-metric unit strings to their metric equivalent.
 var imperialToMetric = map[string]unitConversion{
-	"cup":      {240, "ml"},
-	"cups":     {240, "ml"},
-	"oz":       {28.35, "g"},
-	"ounce":    {28.35, "g"},
-	"ounces":   {28.35, "g"},
-	"lb":       {453.6, "g"},
-	"lbs":      {453.6, "g"},
-	"pound":    {453.6, "g"},
-	"pounds":   {453.6, "g"},
-	"fl oz":    {29.57, "ml"},
-	"fl. oz.":  {29.57, "ml"},
-	"pint":     {473.2, "ml"},
-	"pints":    {473.2, "ml"},
-	"quart":    {946.4, "ml"},
-	"quarts":   {946.4, "ml"},
-	"gallon":   {3785.4, "ml"},
-	"gallons":  {3785.4, "ml"},
-	"stick":    {113.4, "g"}, // stick of butter
-	"sticks":   {113.4, "g"},
+	"cup":     {240, "ml"},
+	"cups":    {240, "ml"},
+	"oz":      {28.35, "g"},
+	"ounce":   {28.35, "g"},
+	"ounces":  {28.35, "g"},
+	"lb":      {453.6, "g"},
+	"lbs":     {453.6, "g"},
+	"pound":   {453.6, "g"},
+	"pounds":  {453.6, "g"},
+	"fl oz":   {29.57, "ml"},
+	"fl. oz.": {29.57, "ml"},
+	"pint":    {473.2, "ml"},
+	"pints":   {473.2, "ml"},
+	"quart":   {946.4, "ml"},
+	"quarts":  {946.4, "ml"},
+	"gallon":  {3785.4, "ml"},
+	"gallons": {3785.4, "ml"},
+	"stick":   {113.4, "g"}, // stick of butter
+	"sticks":  {113.4, "g"},
 }
 
 // countableSpec describes a naturally-whole ingredient: how many grams make one

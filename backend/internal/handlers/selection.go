@@ -1,9 +1,10 @@
 package handlers
 
 import (
+	"cmp"
 	"math"
-	"math/rand"
-	"sort"
+	"math/rand/v2"
+	"slices"
 	"time"
 
 	"github.com/rubenwo/mise/internal/database"
@@ -20,8 +21,8 @@ func selectSuggestedIDs(meta []database.RecipeMeta, count int, now time.Time) []
 	}
 
 	// Seed with today's date so suggestions are stable within a day.
-	seed := int64(now.Year())*10000 + int64(now.Month())*100 + int64(now.Day())
-	rng := rand.New(rand.NewSource(seed))
+	seed := uint64(now.Year())*10000 + uint64(now.Month())*100 + uint64(now.Day())
+	rng := rand.New(rand.NewPCG(seed, 0))
 
 	type entry struct {
 		id      int
@@ -44,7 +45,7 @@ func selectSuggestedIDs(meta []database.RecipeMeta, count int, now time.Time) []
 	for c := range pools {
 		cuisines = append(cuisines, c)
 	}
-	sort.Strings(cuisines)
+	slices.Sort(cuisines)
 	rng.Shuffle(len(cuisines), func(i, j int) { cuisines[i], cuisines[j] = cuisines[j], cuisines[i] })
 
 	picked := make([]int, 0, count)
@@ -113,7 +114,7 @@ func weightedSample(pool []database.RecipeSummary, n int, weightFor func(databas
 		}
 		scored[i] = keyed{s: s, key: math.Pow(u, 1.0/w)}
 	}
-	sort.Slice(scored, func(i, j int) bool { return scored[i].key > scored[j].key })
+	slices.SortFunc(scored, func(a, b keyed) int { return cmp.Compare(b.key, a.key) })
 
 	out := make([]database.RecipeSummary, n)
 	for i := range n {

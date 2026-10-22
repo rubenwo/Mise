@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -22,13 +24,17 @@ import (
 )
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
+
 	cfg, err := config.Load("config.yaml")
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// ctx is cancelled on SIGINT/SIGTERM, which stops background jobs and
+	// triggers a graceful HTTP shutdown below.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	dbPool, err := database.NewPool(ctx, cfg.Database.ConnString())
 	if err != nil {
@@ -88,9 +94,7 @@ func main() {
 	clientPool := llm.NewClientPool(provConfigs)
 	log.Printf("Loaded %d Ollama provider(s)", len(providers))
 
-	// Start background health checker (30 second interval).
-	// An immediate check fires in a goroutine so the DB health state is populated
-	// quickly without delaying startup.
+	// Start background health checker: probes immediately, then every 30s.
 	clientPool.StartHealthChecker(ctx, 30*time.Second, queries)
 	log.Println("Health checker started")
 
@@ -151,10 +155,7 @@ func main() {
 	}
 
 	go func() {
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-		<-sigCh
-
+		<-ctx.Done()
 		log.Println("Shutting down...")
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer shutdownCancel()
@@ -164,7 +165,7 @@ func main() {
 	}()
 
 	log.Printf("Server starting on :%d (%d provider(s))", cfg.Server.Port, len(providers))
-	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
+	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("Server error: %v", err)
 	}
 }

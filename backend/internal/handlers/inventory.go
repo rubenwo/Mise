@@ -3,12 +3,11 @@ package handlers
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/rubenwo/mise/internal/database"
 	"github.com/rubenwo/mise/internal/llm"
@@ -38,8 +37,7 @@ func (h *InventoryHandler) List(w http.ResponseWriter, r *http.Request) {
 
 func (h *InventoryHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var item models.InventoryItem
-	if err := json.NewDecoder(r.Body).Decode(&item); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &item) {
 		return
 	}
 	if item.Name == "" {
@@ -54,14 +52,12 @@ func (h *InventoryHandler) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *InventoryHandler) Update(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id", "invalid id")
+	if !ok {
 		return
 	}
 	var item models.InventoryItem
-	if err := json.NewDecoder(r.Body).Decode(&item); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &item) {
 		return
 	}
 	item.ID = id
@@ -70,7 +66,7 @@ func (h *InventoryHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.queries.UpdateInventoryItem(r.Context(), &item); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "item not found")
 			return
 		}
@@ -81,13 +77,12 @@ func (h *InventoryHandler) Update(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *InventoryHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id", "invalid id")
+	if !ok {
 		return
 	}
 	if err := h.queries.DeleteInventoryItem(r.Context(), id); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "item not found")
 			return
 		}
@@ -192,13 +187,12 @@ func (h *InventoryHandler) ListScans(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *InventoryHandler) DeleteScan(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id", "invalid id")
+	if !ok {
 		return
 	}
 	if err := h.queries.DeletePendingIngredientScan(r.Context(), id); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "scan not found")
 			return
 		}

@@ -2,13 +2,12 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
-	"strconv"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/rubenwo/mise/internal/database"
@@ -26,9 +25,8 @@ func NewChatHandler(q *database.Queries, o *llm.Orchestrator) *ChatHandler {
 }
 
 func (h *ChatHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id", "invalid id")
+	if !ok {
 		return
 	}
 
@@ -45,9 +43,8 @@ func (h *ChatHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id", "invalid id")
+	if !ok {
 		return
 	}
 
@@ -61,7 +58,7 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 
 	recipe, err := h.queries.GetRecipe(r.Context(), id)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "recipe not found")
 			return
 		}

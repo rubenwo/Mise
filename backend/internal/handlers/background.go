@@ -197,13 +197,13 @@ func (b *BackgroundGenerator) runGeneration(ctx context.Context, count, servings
 		if b.imageSearcher != nil {
 			go func(r *models.Recipe) {
 				filename := "pending-" + strconv.Itoa(r.ID)
-				imageURL, err := b.imageSearcher.SearchAndDownloadRecipeImage(context.Background(), r.Title, filename)
+				imageURL, err := b.imageSearcher.SearchAndDownloadRecipeImage(ctx, r.Title, filename)
 				if err != nil {
 					log.Printf("Background generation: image fetch for %q failed: %v", r.Title, err)
 					b.hub.Publish(llm.SSEEvent{Type: "pending_added", Data: *r})
 					return
 				}
-				if err := b.queries.SetPendingRecipeImage(context.Background(), r.ID, imageURL); err != nil {
+				if err := b.queries.SetPendingRecipeImage(ctx, r.ID, imageURL); err != nil {
 					log.Printf("Background generation: failed to save image for %q: %v", r.Title, err)
 				} else {
 					r.ImageURL = imageURL

@@ -2,6 +2,8 @@ package database
 
 import (
 	"context"
+	"errors"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rubenwo/mise/internal/models"
@@ -130,7 +132,7 @@ func (q *Queries) ListSettings(ctx context.Context) ([]models.AppSetting, error)
 func (q *Queries) GetSetting(ctx context.Context, key string) (string, error) {
 	var value string
 	err := q.pool.QueryRow(ctx, "SELECT value FROM app_settings WHERE key = $1", key).Scan(&value)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
 	}
 	return value, err

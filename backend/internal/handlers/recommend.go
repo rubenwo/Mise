@@ -59,8 +59,7 @@ type RecommendResponse struct {
 // request. Stateless — the client passes the full conversation each turn.
 func (h *RecipeHandler) RecommendChat(w http.ResponseWriter, r *http.Request) {
 	var req RecommendRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 	if len(req.Messages) == 0 {

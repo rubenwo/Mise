@@ -1,8 +1,10 @@
 package llm
 
 import (
+	"cmp"
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/rubenwo/mise/internal/models"
@@ -60,7 +62,7 @@ func AllCuisines(counts map[string]int) []string {
 			all = append(all, c)
 		}
 	}
-	sort.Strings(all)
+	slices.Sort(all)
 	return all
 }
 
@@ -149,24 +151,12 @@ func BuildGeneratePrompt(req models.GenerateRequest, cuisineCounts map[string]in
 // Alphabetical order is used as a tiebreaker for stable, deterministic picks.
 // Returns an empty string if counts is empty.
 func PickLeastRepresentedCuisine(counts map[string]int) string {
-	type entry struct {
-		cuisine string
-		count   int
-	}
-	entries := make([]entry, 0, len(counts))
-	for c, cnt := range counts {
-		entries = append(entries, entry{c, cnt})
-	}
-	sort.Slice(entries, func(i, j int) bool {
-		if entries[i].count != entries[j].count {
-			return entries[i].count < entries[j].count
-		}
-		return entries[i].cuisine < entries[j].cuisine
-	})
-	if len(entries) == 0 {
+	if len(counts) == 0 {
 		return ""
 	}
-	return entries[0].cuisine
+	return slices.MinFunc(slices.Collect(maps.Keys(counts)), func(a, b string) int {
+		return cmp.Or(cmp.Compare(counts[a], counts[b]), strings.Compare(a, b))
+	})
 }
 
 func BuildRefinePrompt(recipe models.Recipe, feedback string) string {
@@ -332,4 +322,3 @@ func BuildBackgroundGeneratePrompt(targetCuisine string, allCuisines []string, i
 
 	return prompt
 }
-

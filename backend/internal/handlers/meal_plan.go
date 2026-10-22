@@ -3,13 +3,12 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
-	"strconv"
 	"sync"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/rubenwo/mise/internal/database"
 	"github.com/rubenwo/mise/internal/ingredients"
@@ -34,8 +33,7 @@ func (h *MealPlanHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name string `json:"name"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 	if req.Name == "" {
@@ -63,15 +61,14 @@ func (h *MealPlanHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *MealPlanHandler) Get(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id", "invalid id")
+	if !ok {
 		return
 	}
 
 	plan, err := h.queries.GetMealPlan(r.Context(), id)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "plan not found")
 			return
 		}
@@ -93,8 +90,7 @@ type SuggestionsResponse struct {
 
 func (h *MealPlanHandler) Suggestions(w http.ResponseWriter, r *http.Request) {
 	var req SuggestionsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 	if len(req.Ingredients) == 0 {
@@ -169,15 +165,14 @@ func (h *MealPlanHandler) getPlanIngredients(r *http.Request, id int) ([]models.
 }
 
 func (h *MealPlanHandler) Ingredients(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id", "invalid id")
+	if !ok {
 		return
 	}
 
 	result, err := h.getPlanIngredients(r, id)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "plan not found")
 			return
 		}
@@ -199,14 +194,13 @@ type AHMatchedIngredient struct {
 }
 
 func (h *MealPlanHandler) OrderAH(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id", "invalid id")
+	if !ok {
 		return
 	}
 	ingredients, err := h.getPlanIngredients(r, id)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "plan not found")
 			return
 		}
@@ -276,14 +270,13 @@ func (h *MealPlanHandler) OrderAH(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *MealPlanHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id", "invalid id")
+	if !ok {
 		return
 	}
 
 	if err := h.queries.DeleteMealPlan(r.Context(), id); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "plan not found")
 			return
 		}
@@ -295,15 +288,13 @@ func (h *MealPlanHandler) Delete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *MealPlanHandler) Update(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id", "invalid id")
+	if !ok {
 		return
 	}
 
 	var req models.UpdateMealPlanRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -314,7 +305,7 @@ func (h *MealPlanHandler) Update(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := h.queries.UpdateMealPlanStatus(r.Context(), id, *req.Status); err != nil {
-			if err == pgx.ErrNoRows {
+			if errors.Is(err, pgx.ErrNoRows) {
 				writeError(w, http.StatusNotFound, "plan not found")
 				return
 			}
@@ -333,15 +324,13 @@ func (h *MealPlanHandler) Update(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *MealPlanHandler) AddRecipe(w http.ResponseWriter, r *http.Request) {
-	planID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid plan id")
+	planID, ok := pathID(w, r, "id", "invalid plan id")
+	if !ok {
 		return
 	}
 
 	var req models.AddPlanRecipeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 	if req.RecipeID == 0 {
@@ -368,15 +357,13 @@ func (h *MealPlanHandler) AddRecipe(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *MealPlanHandler) Randomize(w http.ResponseWriter, r *http.Request) {
-	planID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid plan id")
+	planID, ok := pathID(w, r, "id", "invalid plan id")
+	if !ok {
 		return
 	}
 
 	var req models.RandomizeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 	if len(req.Servings) == 0 {
@@ -514,19 +501,17 @@ func (h *MealPlanHandler) Randomize(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *MealPlanHandler) RemoveRecipe(w http.ResponseWriter, r *http.Request) {
-	planID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid plan id")
+	planID, ok := pathID(w, r, "id", "invalid plan id")
+	if !ok {
 		return
 	}
-	recipeID, err := strconv.Atoi(chi.URLParam(r, "recipeId"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid recipe id")
+	recipeID, ok := pathID(w, r, "recipeId", "invalid recipe id")
+	if !ok {
 		return
 	}
 
 	if err := h.queries.RemoveRecipeFromPlan(r.Context(), planID, recipeID); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "recipe not in plan")
 			return
 		}
@@ -545,20 +530,17 @@ func (h *MealPlanHandler) RemoveRecipe(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *MealPlanHandler) UpdateRecipe(w http.ResponseWriter, r *http.Request) {
-	planID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid plan id")
+	planID, ok := pathID(w, r, "id", "invalid plan id")
+	if !ok {
 		return
 	}
-	recipeID, err := strconv.Atoi(chi.URLParam(r, "recipeId"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid recipe id")
+	recipeID, ok := pathID(w, r, "recipeId", "invalid recipe id")
+	if !ok {
 		return
 	}
 
 	var req models.UpdatePlanRecipeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 

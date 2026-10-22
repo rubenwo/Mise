@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"errors"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -13,7 +14,7 @@ func (q *Queries) GetTranslation(ctx context.Context, sourceText, targetLang str
 		"SELECT translated_text FROM translation_cache WHERE source_text = $1 AND target_lang = $2",
 		sourceText, targetLang,
 	).Scan(&translated)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
 	}
 	return translated, err

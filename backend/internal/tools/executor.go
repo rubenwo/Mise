@@ -7,9 +7,9 @@ import (
 )
 
 type Executor struct {
-	webSearcher   *WebSearcher
-	dbSearcher    *DBSearcher
-	edamamClient  *EdamamClient
+	webSearcher  *WebSearcher
+	dbSearcher   *DBSearcher
+	edamamClient *EdamamClient
 }
 
 func NewExecutor(ws *WebSearcher, ds *DBSearcher, ec *EdamamClient) *Executor {

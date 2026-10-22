@@ -12,8 +12,8 @@ type ToolFunction struct {
 }
 
 type ToolParameters struct {
-	Type       string                 `json:"type"`
-	Required   []string               `json:"required"`
+	Type       string                  `json:"type"`
+	Required   []string                `json:"required"`
 	Properties map[string]ToolProperty `json:"properties"`
 }
 

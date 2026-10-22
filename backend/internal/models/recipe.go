@@ -5,10 +5,10 @@ import (
 )
 
 type Ingredient struct {
-	Name     string  `json:"name"`
-	Amount   float64 `json:"amount"`
-	Unit     string  `json:"unit"`
-	Notes    string  `json:"notes,omitempty"`
+	Name   string  `json:"name"`
+	Amount float64 `json:"amount"`
+	Unit   string  `json:"unit"`
+	Notes  string  `json:"notes,omitempty"`
 }
 
 type Recipe struct {
@@ -46,7 +46,7 @@ type BatchGenerateRequest struct {
 }
 
 type RefineRequest struct {
-	Recipe  Recipe `json:"recipe"`
+	Recipe   Recipe `json:"recipe"`
 	Feedback string `json:"feedback"`
 }
 

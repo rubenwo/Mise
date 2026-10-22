@@ -3,14 +3,14 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
-	"sort"
+	"slices"
 	"strconv"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/rubenwo/mise/internal/database"
 	"github.com/rubenwo/mise/internal/llm"
@@ -75,8 +75,7 @@ func (h *RecipeHandler) LibrarySearchDirect(w http.ResponseWriter, r *http.Reque
 		MaxTotalMinutes     int      `json:"max_total_minutes"`
 		Limit               int      `json:"limit"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 	if req.Limit <= 0 {
@@ -105,15 +104,14 @@ func (h *RecipeHandler) LibrarySearchDirect(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *RecipeHandler) Get(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id", "invalid id")
+	if !ok {
 		return
 	}
 
 	recipe, err := h.queries.GetRecipe(r.Context(), id)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "recipe not found")
 			return
 		}
@@ -126,8 +124,7 @@ func (h *RecipeHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 func (h *RecipeHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var recipe models.Recipe
-	if err := json.NewDecoder(r.Body).Decode(&recipe); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &recipe) {
 		return
 	}
 
@@ -145,9 +142,15 @@ func (h *RecipeHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusCreated, recipe)
 
-	// Fetch and store an image in the background so it is ready when the user next views the recipe.
+	// Fetch and store an image in the background so it is ready when the user
+	// next views the recipe. Detached from the request so it outlives the
+	// response, but bounded so it cannot run forever.
 	if h.imageSearcher != nil {
-		go h.fetchAndStoreImage(context.Background(), recipe.ID, recipe.Title)
+		go func() {
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 2*time.Minute)
+			defer cancel()
+			h.fetchAndStoreImage(ctx, recipe.ID, recipe.Title)
+		}()
 	}
 }
 
@@ -170,20 +173,18 @@ type UpdateContentRequest struct {
 }
 
 func (h *RecipeHandler) Update(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id", "invalid id")
+	if !ok {
 		return
 	}
 
 	var req UpdateContentRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
 	if err := h.queries.UpdateRecipeContent(r.Context(), id, req.Ingredients, req.Instructions, llm.NormalizeCuisine(req.CuisineType)); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "recipe not found")
 			return
 		}
@@ -195,14 +196,13 @@ func (h *RecipeHandler) Update(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *RecipeHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id", "invalid id")
+	if !ok {
 		return
 	}
 
 	if err := h.queries.DeleteRecipe(r.Context(), id); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "recipe not found")
 			return
 		}
@@ -215,8 +215,7 @@ func (h *RecipeHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 func (h *RecipeHandler) Search(w http.ResponseWriter, r *http.Request) {
 	var req models.SearchRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -258,15 +257,14 @@ func (h *RecipeHandler) PreviewImage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *RecipeHandler) FetchImage(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id", "invalid id")
+	if !ok {
 		return
 	}
 
 	recipe, err := h.queries.GetRecipe(r.Context(), id)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "recipe not found")
 			return
 		}
@@ -298,9 +296,8 @@ func (h *RecipeHandler) FetchImage(w http.ResponseWriter, r *http.Request) {
 // History returns every plan a recipe has appeared on, with completion data
 // and rating. Newest cooked first; never-cooked plans last.
 func (h *RecipeHandler) History(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id", "invalid id")
+	if !ok {
 		return
 	}
 	entries, err := h.queries.GetRecipeHistory(r.Context(), id)
@@ -355,8 +352,8 @@ func (h *RecipeHandler) Suggestions(w http.ResponseWriter, r *http.Request) {
 	for i, id := range ids {
 		order[id] = i
 	}
-	sort.Slice(recipes, func(i, j int) bool {
-		return order[recipes[i].ID] < order[recipes[j].ID]
+	slices.SortFunc(recipes, func(a, b models.Recipe) int {
+		return order[a.ID] - order[b.ID]
 	})
 
 	writeJSON(w, http.StatusOK, recipes)

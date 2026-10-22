@@ -34,11 +34,11 @@ type tokenResponse struct {
 
 type searchResponse struct {
 	Products []struct {
-		WebshopID    int    `json:"webshopId"`
-		Title        string `json:"title"`
-		CurrentPrice float64 `json:"currentPrice"`
-		SalesUnitSize string `json:"salesUnitSize"`
-		Images       []struct {
+		WebshopID     int     `json:"webshopId"`
+		Title         string  `json:"title"`
+		CurrentPrice  float64 `json:"currentPrice"`
+		SalesUnitSize string  `json:"salesUnitSize"`
+		Images        []struct {
 			URL string `json:"url"`
 		} `json:"images"`
 	} `json:"products"`

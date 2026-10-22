@@ -36,8 +36,9 @@ var sizeAdjectives = map[string]bool{
 // Keys and values must be lowercase and already free of parentheticals/commas.
 // NOTE: keys are written in their POST-normalization form (leading sizeAdjectives already
 // stripped, trailing 's' already removed, parentheticals removed). For example:
-//   "whole wheat flour" is never hit because "whole" is stripped → key must be "wheat flour".
-//   "garlic cloves" is never hit because trailing 's' stripped → key must be "garlic clove".
+//
+//	"whole wheat flour" is never hit because "whole" is stripped → key must be "wheat flour".
+//	"garlic cloves" is never hit because trailing 's' stripped → key must be "garlic clove".
 var ingredientAliases = map[string]string{
 
 	// ── Flour ──────────────────────────────────────────────────────────────────
@@ -110,15 +111,15 @@ var ingredientAliases = map[string]string{
 
 	// ── Milk ───────────────────────────────────────────────────────────────────
 	// "whole milk" → "whole" stripped → "milk"; no alias needed
-	"full fat milk":  "milk",
-	"full-fat milk":  "milk",
-	"skimmed milk":   "skim milk", // UK spelling
-	"nonfat milk":    "skim milk", // US alternate
-	"non-fat milk":   "skim milk",
+	"full fat milk": "milk",
+	"full-fat milk": "milk",
+	"skimmed milk":  "skim milk", // UK spelling
+	"nonfat milk":   "skim milk", // US alternate
+	"non-fat milk":  "skim milk",
 
 	// ── Yogurt ─────────────────────────────────────────────────────────────────
 	// "natural yogurt/yoghurt" → "natural" stripped → "yogurt"/"yoghurt"; only need yoghurt alias
-	"yoghurt":       "yogurt",       // UK spelling
+	"yoghurt":       "yogurt", // UK spelling
 	"plain yogurt":  "yogurt",
 	"plain yoghurt": "yogurt",
 	"greek yoghurt": "greek yogurt", // UK spelling
@@ -142,34 +143,34 @@ var ingredientAliases = map[string]string{
 	"tinned tomato":      "canned tomato", // UK "tin" = US "can"
 
 	// ── Vegetables — regional / alternate names ─────────────────────────────────
-	"aubergine":     "eggplant",       // UK/FR → US
-	"courgette":     "zucchini",       // UK/FR → US/IT
-	"rocket":        "arugula",        // UK/AU → US/IT
-	"swede":         "rutabaga",       // UK → US
-	"beetroot":      "beet",           // UK → US
-	"mangetout":     "snow pea",       // UK/FR → US
-	"mange tout":    "snow pea",
-	"capsicum":      "bell pepper",    // AU/NZ → US
-	"cos lettuce":   "romaine lettuce",
-	"romaine":       "romaine lettuce",
-	"celery root":   "celeriac",       // US alternate
-	"pak choi":      "bok choy",       // UK spelling
-	"pak choy":      "bok choy",
-	"baby corn":     "corn",
-	"sweetcorn":     "corn",           // UK → US
+	"aubergine":       "eggplant", // UK/FR → US
+	"courgette":       "zucchini", // UK/FR → US/IT
+	"rocket":          "arugula",  // UK/AU → US/IT
+	"swede":           "rutabaga", // UK → US
+	"beetroot":        "beet",     // UK → US
+	"mangetout":       "snow pea", // UK/FR → US
+	"mange tout":      "snow pea",
+	"capsicum":        "bell pepper", // AU/NZ → US
+	"cos lettuce":     "romaine lettuce",
+	"romaine":         "romaine lettuce",
+	"celery root":     "celeriac", // US alternate
+	"pak choi":        "bok choy", // UK spelling
+	"pak choy":        "bok choy",
+	"baby corn":       "corn",
+	"sweetcorn":       "corn", // UK → US
 	"corn on the cob": "corn",
 
 	// ── Herbs ──────────────────────────────────────────────────────────────────
 	// "coriander" alone safely maps to cilantro: compound forms like
 	// "coriander seed" and "ground coriander" are never affected by this alias.
-	"coriander":      "cilantro", // UK/EU leaf name → US name
-	"coriander leaf": "cilantro",
+	"coriander":       "cilantro", // UK/EU leaf name → US name
+	"coriander leaf":  "cilantro",
 	"coriander leave": "cilantro", // post-normalization form of "coriander leaves"
 	// Parsley variants
-	"flat leaf parsley":  "parsley",
-	"flat-leaf parsley":  "parsley",
-	"curly parsley":      "parsley",
-	"italian parsley":    "parsley",
+	"flat leaf parsley": "parsley",
+	"flat-leaf parsley": "parsley",
+	"curly parsley":     "parsley",
+	"italian parsley":   "parsley",
 
 	// ── Cheese ─────────────────────────────────────────────────────────────────
 	"parmigiano":          "parmesan",
@@ -183,15 +184,15 @@ var ingredientAliases = map[string]string{
 	// ── Legumes ────────────────────────────────────────────────────────────────
 	"garbanzo":            "chickpea", // US alternate → international canonical
 	"garbanzo bean":       "chickpea",
-	"haricot bean":        "navy bean",     // UK → US
+	"haricot bean":        "navy bean", // UK → US
 	"cannellini bean":     "white bean",
 	"great northern bean": "white bean",
-	"butter bean":         "lima bean",     // UK → US
-	"broad bean":          "fava bean",     // UK → US/IT
+	"butter bean":         "lima bean", // UK → US
+	"broad bean":          "fava bean", // UK → US/IT
 	"borlotti bean":       "cranberry bean",
 
 	// ── Ground meat ────────────────────────────────────────────────────────────
-	"beef mince":    "ground beef",    // UK → US
+	"beef mince":    "ground beef", // UK → US
 	"pork mince":    "ground pork",
 	"turkey mince":  "ground turkey",
 	"lamb mince":    "ground lamb",
@@ -209,13 +210,13 @@ var ingredientAliases = map[string]string{
 	"pork neck":   "pork shoulder",
 
 	// ── Pantry staples ──────────────────────────────────────────────────────────
-	"cornflour":           "cornstarch",    // UK name for cornstarch
+	"cornflour":           "cornstarch", // UK name for cornstarch
 	"corn flour":          "cornstarch",
-	"bicarbonate of soda": "baking soda",   // UK → US
+	"bicarbonate of soda": "baking soda", // UK → US
 	"bicarb":              "baking soda",
-	"bicarb soda":         "baking soda",   // AU term
-	"soya sauce":          "soy sauce",     // UK spelling
-	"shoyu":               "soy sauce",     // Japanese name
+	"bicarb soda":         "baking soda",     // AU term
+	"soya sauce":          "soy sauce",       // UK spelling
+	"shoyu":               "soy sauce",       // Japanese name
 	"vanilla essence":     "vanilla extract", // UK term
 	"balsamic":            "balsamic vinegar",
 	"passata":             "tomato passata", // common name shorthand

@@ -1,6 +1,8 @@
 package config
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"strconv"
 	"time"
@@ -65,10 +67,10 @@ func Load(path string) (*Config, error) {
 			ImagesDir:  "./images",
 		},
 		Database: DatabaseConfig{
-			Host:    "localhost",
-			Port:    5432,
-			User:    "postgres",
-			Name:    "recipes",
+			Host: "localhost",
+			Port: 5432,
+			User: "postgres",
+			Name: "recipes",
 			// SSLMode is "disable" intentionally: this app connects to a local PostgreSQL
 			// instance only. Change to "require" or "verify-full" for remote/production use.
 			SSLMode: "disable",
@@ -91,7 +93,7 @@ func Load(path string) (*Config, error) {
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return cfg, nil
 		}
 		return nil, err

@@ -79,7 +79,6 @@ func bigramSet(s string) map[string]struct{} {
 	return set
 }
 
-
 // Levenshtein computes the edit distance between two strings.
 func Levenshtein(a, b string) int {
 	ra, rb := []rune(a), []rune(b)

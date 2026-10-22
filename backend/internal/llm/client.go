@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"slices"
 	"sync/atomic"
 	"time"
 )
@@ -26,7 +27,6 @@ type Client struct {
 	providerType ProviderType
 	httpClient   *http.Client
 	healthy      atomic.Bool
-	lastCheck    time.Time
 	providerID   int
 	tags         []string
 }
@@ -43,17 +43,11 @@ func NewClient(baseURL, model string, providerType ProviderType, timeout time.Du
 		tags:       tags,
 	}
 	c.healthy.Store(true)
-	c.lastCheck = time.Now()
 	return c
 }
 
 func (c *Client) hasTag(tag string) bool {
-	for _, t := range c.tags {
-		if t == tag {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(c.tags, tag)
 }
 
 // Message is the shared message type for both Ollama and OpenAI-compat APIs.
@@ -346,7 +340,11 @@ func (c *Client) EnsureModel(ctx context.Context) error {
 	if c.providerType != ProviderTypeOllama {
 		return nil // non-Ollama providers manage their own models
 	}
-	resp, err := http.Get(c.baseURL + "/api/tags")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/tags", nil)
+	if err != nil {
+		return err
+	}
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("checking models: %w", err)
 	}

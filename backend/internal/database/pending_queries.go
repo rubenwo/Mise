@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -94,7 +95,7 @@ func (q *Queries) ApprovePendingRecipe(ctx context.Context, pendingID int) (*mod
 		&r.Servings, &r.Difficulty, &ingredientsJSON, &instructionsJSON,
 		&r.DietaryRestrictions, &r.Tags, &r.GeneratedByModel, &r.ImageURL,
 	)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, pgx.ErrNoRows
 	}
 	if err != nil {
@@ -144,7 +145,7 @@ func (q *Queries) RejectPendingRecipe(ctx context.Context, id int) (string, erro
 	err := q.pool.QueryRow(ctx,
 		"DELETE FROM pending_recipes WHERE id = $1 RETURNING COALESCE(image_url, '')", id,
 	).Scan(&imageURL)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return "", pgx.ErrNoRows
 	}
 	return imageURL, err

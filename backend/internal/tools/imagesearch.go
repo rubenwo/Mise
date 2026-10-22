@@ -19,10 +19,10 @@ import (
 )
 
 const (
-	maxImageBytes  = 5 * 1024 * 1024 // 5 MB hard cap
-	minImageBytes  = 1024             // 1 KB minimum — reject empty/stub files
-	maxVQDBody     = 256 * 1024
-	maxAPIBody     = 1 * 1024 * 1024
+	maxImageBytes = 5 * 1024 * 1024 // 5 MB hard cap
+	minImageBytes = 1024            // 1 KB minimum — reject empty/stub files
+	maxVQDBody    = 256 * 1024
+	maxAPIBody    = 1 * 1024 * 1024
 )
 
 // allowedMIMEToExt maps permitted image MIME types to file extensions.
@@ -40,7 +40,7 @@ var magicSignatures = []struct {
 }{
 	{".jpg", []byte{0xFF, 0xD8, 0xFF}},
 	{".png", []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}},
-	{".gif", []byte{0x47, 0x49, 0x46, 0x38}}, // GIF8
+	{".gif", []byte{0x47, 0x49, 0x46, 0x38}},  // GIF8
 	{".webp", []byte{0x52, 0x49, 0x46, 0x46}}, // RIFF (WebP also checks bytes 8-11)
 }
 

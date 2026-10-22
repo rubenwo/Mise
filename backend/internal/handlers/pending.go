@@ -1,13 +1,11 @@
 package handlers
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
-	"strconv"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/rubenwo/mise/internal/database"
 	"github.com/rubenwo/mise/internal/llm"
@@ -38,15 +36,14 @@ func (h *PendingHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *PendingHandler) Approve(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id", "invalid id")
+	if !ok {
 		return
 	}
 
 	recipe, err := h.queries.ApprovePendingRecipe(r.Context(), id)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "pending recipe not found")
 			return
 		}
@@ -73,20 +70,18 @@ func (h *PendingHandler) Approve(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *PendingHandler) Update(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id", "invalid id")
+	if !ok {
 		return
 	}
 
 	var req UpdateContentRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
 	if err := h.queries.UpdatePendingRecipeContent(r.Context(), id, req.Ingredients, req.Instructions); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "pending recipe not found")
 			return
 		}
@@ -98,15 +93,14 @@ func (h *PendingHandler) Update(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *PendingHandler) Reject(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id", "invalid id")
+	if !ok {
 		return
 	}
 
 	imageURL, err := h.queries.RejectPendingRecipe(r.Context(), id)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "pending recipe not found")
 			return
 		}
@@ -123,15 +117,14 @@ func (h *PendingHandler) Reject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *PendingHandler) FetchImage(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id", "invalid id")
+	if !ok {
 		return
 	}
 
 	title, err := h.queries.GetPendingRecipeTitle(r.Context(), id)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "pending recipe not found")
 			return
 		}

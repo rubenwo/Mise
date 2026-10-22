@@ -9,7 +9,6 @@ import (
 	"github.com/rubenwo/mise/internal/database"
 )
 
-
 type ProviderConfig struct {
 	Host         string
 	Model        string
@@ -20,11 +19,9 @@ type ProviderConfig struct {
 }
 
 type ClientPool struct {
-	mu             sync.Mutex
-	clients        []*Client
-	next           int
-	healthCheck    time.Duration
-	stopHealthChan chan struct{}
+	mu      sync.Mutex
+	clients []*Client
+	next    int
 }
 
 func NewClientPool(providers []ProviderConfig) *ClientPool {
@@ -49,9 +46,10 @@ func (p *ClientPool) Reload(providers []ProviderConfig) {
 }
 
 // FeatureStatus returns the availability of a feature tag:
-//   "available"    — at least one healthy provider has this tag
-//   "offline"      — a provider has the tag but none are currently healthy
-//   "unconfigured" — no provider has this tag at all
+//
+//	"available"    — at least one healthy provider has this tag
+//	"offline"      — a provider has the tag but none are currently healthy
+//	"unconfigured" — no provider has this tag at all
 func (p *ClientPool) FeatureStatus(tag string) string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -113,20 +111,22 @@ func (p *ClientPool) Clients() []*Client {
 	return out
 }
 
-func (p *ClientPool) StartHealthChecker(ctx context.Context, interval time.Duration, db *database.Queries) {
-	p.healthCheck = interval
-	p.stopHealthChan = make(chan struct{})
+// healthCheckTimeout bounds a single provider probe so one unreachable host
+// cannot stall the checks for the others.
+const healthCheckTimeout = 5 * time.Second
 
+// StartHealthChecker probes every provider immediately and then on each
+// interval until ctx is cancelled.
+func (p *ClientPool) StartHealthChecker(ctx context.Context, interval time.Duration, db *database.Queries) {
 	go func() {
+		p.checkHealth(ctx, db)
+
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
-
 		for {
 			select {
 			case <-ticker.C:
 				p.checkHealth(ctx, db)
-			case <-p.stopHealthChan:
-				return
 			case <-ctx.Done():
 				return
 			}
@@ -134,34 +134,24 @@ func (p *ClientPool) StartHealthChecker(ctx context.Context, interval time.Durat
 	}()
 }
 
-func (p *ClientPool) StopHealthChecker() {
-	if p.stopHealthChan != nil {
-		close(p.stopHealthChan)
-	}
-}
-
 func (p *ClientPool) checkHealth(ctx context.Context, db *database.Queries) {
-	p.mu.Lock()
-	clients := make([]*Client, len(p.clients))
-	copy(clients, p.clients)
-	p.mu.Unlock()
+	var wg sync.WaitGroup
+	for _, c := range p.Clients() {
+		wg.Go(func() {
+			probeCtx, cancel := context.WithTimeout(ctx, healthCheckTimeout)
+			healthy := c.IsHealthy(probeCtx)
+			cancel()
+			c.healthy.Store(healthy)
 
-	for _, c := range clients {
-		healthy := c.IsHealthy(ctx)
-		c.lastCheck = time.Now()
-		c.healthy.Store(healthy)
-
-		var lastError *string
-		if !healthy {
-			err := "health check failed"
-			lastError = &err
-		}
-
-		status := "healthy"
-		if !healthy {
-			status = "unhealthy"
-		}
-
-		_ = db.UpdateProviderHealthStatus(ctx, c.providerID, status, lastError)
+			status := "healthy"
+			var lastError *string
+			if !healthy {
+				status = "unhealthy"
+				msg := "health check failed"
+				lastError = &msg
+			}
+			_ = db.UpdateProviderHealthStatus(ctx, c.providerID, status, lastError)
+		})
 	}
+	wg.Wait()
 }

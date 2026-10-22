@@ -36,8 +36,7 @@ func avoidTitlesFromFingerprints(fps []database.RecipeFingerprint) []string {
 
 func (h *GenerateHandler) Single(w http.ResponseWriter, r *http.Request) {
 	var req models.GenerateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -57,8 +56,7 @@ func (h *GenerateHandler) Single(w http.ResponseWriter, r *http.Request) {
 
 func (h *GenerateHandler) Batch(w http.ResponseWriter, r *http.Request) {
 	var req models.BatchGenerateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -159,8 +157,7 @@ func (h *GenerateHandler) Batch(w http.ResponseWriter, r *http.Request) {
 
 func (h *GenerateHandler) Import(w http.ResponseWriter, r *http.Request) {
 	var req models.ImportRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -181,8 +178,7 @@ func (h *GenerateHandler) Import(w http.ResponseWriter, r *http.Request) {
 
 func (h *GenerateHandler) Refine(w http.ResponseWriter, r *http.Request) {
 	var req models.RefineRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
