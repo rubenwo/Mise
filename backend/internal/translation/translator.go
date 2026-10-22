@@ -1,14 +1,13 @@
 // Package translation provides LLM-backed text translation with DB caching.
 // Translations are cached so repeated calls for the same text are instant.
 //
-// Provider selection: if a provider is tagged "translation" it is preferred;
-// otherwise any healthy pool client is used. To use a lighter/faster model for
-// translation, add a provider with the "translation" tag in Settings.
+// Provider selection: only providers tagged "translation" are used. The prompt
+// follows TranslateGemma's required format, which also works for general
+// instruction-tuned models.
 package translation
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
@@ -46,133 +45,72 @@ func (t *Translator) Translate(ctx context.Context, text, targetLang string) str
 		return text
 	}
 
-	messages := []llm.Message{
-		{
-			Role:    "system",
-			Content: fmt.Sprintf(`You translate food ingredient names from English to %s. Reply with ONLY valid JSON in this exact format: {"translation":"<result>"}`, langName(targetLang)),
-		},
-		{Role: "user", Content: text},
-	}
-
-	resp, err := client.ChatJSON(ctx, messages)
+	// TranslateGemma expects a single user message in this exact format and
+	// replies with the bare translation, so no system prompt or JSON mode.
+	messages := []llm.Message{{Role: "user", Content: BuildPrompt(text, "en", targetLang)}}
+	resp, err := client.Chat(ctx, messages, nil)
 	if err != nil {
 		log.Printf("translation: LLM call failed for %q: %v", text, err)
 		return text
 	}
 
-	var result struct {
-		Translation string `json:"translation"`
-	}
-	if err := json.Unmarshal([]byte(resp.Message.Content), &result); err != nil {
-		log.Printf("translation: failed to parse JSON response for %q: %v", text, err)
-		return text
-	}
-	translated := cleanTranslation(result.Translation)
+	translated := cleanTranslation(resp.Message.Content)
 	if translated == "" {
 		return text
 	}
 
-	// Cache for future calls.
 	if err := t.queries.SetTranslation(ctx, text, targetLang, translated); err != nil {
 		log.Printf("translation: failed to cache %q -> %q: %v", text, translated, err)
 	}
-
 	return translated
 }
 
-// TranslateMany translates a slice of texts in a single LLM call for uncached items,
-// returning results in the same order as the input.
+// TranslateMany translates each text, returning results in input order.
+// Items are translated one at a time: dedicated translation models are trained
+// on single passages, and every result is cached, so repeat runs are cheap.
 func (t *Translator) TranslateMany(ctx context.Context, texts []string, targetLang string) []string {
 	out := make([]string, len(texts))
-
-	// Resolve cache hits and collect indices that need LLM translation.
-	var missingIdx []int
-	var missingTexts []string
 	for i, text := range texts {
-		if text == "" || targetLang == "" || targetLang == "en" {
+		if ctx.Err() != nil {
 			out[i] = text
 			continue
 		}
-		if cached, err := t.queries.GetTranslation(ctx, text, targetLang); err == nil && cached != "" {
-			out[i] = cached
-			continue
-		}
-		out[i] = text // default to original
-		missingIdx = append(missingIdx, i)
-		missingTexts = append(missingTexts, text)
+		out[i] = t.Translate(ctx, text, targetLang)
 	}
-
-	if len(missingTexts) == 0 {
-		return out
-	}
-
-	client := t.pool.AcquireWithTag("translation")
-	if client == nil {
-		log.Printf("translation: no translation provider available, returning original texts")
-		return out
-	}
-
-	// Build a numbered list so the model returns translations in order.
-	var userMsg strings.Builder
-	for i, text := range missingTexts {
-		fmt.Fprintf(&userMsg, "%d. %s\n", i+1, text)
-	}
-
-	messages := []llm.Message{
-		{
-			Role: "system",
-			Content: fmt.Sprintf(
-				`You translate food ingredient names from English to %s. `+
-					`The user sends a numbered list. Reply with ONLY valid JSON in this exact format: {"translations":["<result1>","<result2>","..."]} — one entry per input, in the same order.`,
-				langName(targetLang),
-			),
-		},
-		{Role: "user", Content: strings.TrimSpace(userMsg.String())},
-	}
-
-	resp, err := client.ChatJSON(ctx, messages)
-	if err != nil {
-		log.Printf("translation: batch LLM call failed: %v", err)
-		return out
-	}
-
-	var result struct {
-		Translations []string `json:"translations"`
-	}
-	if err := json.Unmarshal([]byte(resp.Message.Content), &result); err != nil {
-		log.Printf("translation: failed to parse batch JSON response: %v", err)
-		return out
-	}
-
-	for i, translated := range result.Translations {
-		if i >= len(missingIdx) {
-			break
-		}
-		translated = cleanTranslation(translated)
-		if translated == "" {
-			continue
-		}
-		origIdx := missingIdx[i]
-		origText := texts[origIdx]
-		out[origIdx] = translated
-		if err := t.queries.SetTranslation(ctx, origText, targetLang, translated); err != nil {
-			log.Printf("translation: failed to cache %q -> %q: %v", origText, translated, err)
-		}
-	}
-
 	return out
 }
 
-// cleanTranslation strips whitespace and surrounding quotes from a model response.
+// BuildPrompt renders TranslateGemma's prompt template
+// (https://ollama.com/library/translategemma).
+func BuildPrompt(text, sourceLang, targetLang string) string {
+	src := fmt.Sprintf("%s (%s)", langName(sourceLang), sourceLang)
+	dst := fmt.Sprintf("%s (%s)", langName(targetLang), targetLang)
+	return fmt.Sprintf("You are a professional %s to %s translator. "+
+		"Your goal is to accurately convey the meaning and nuances of the original %s text "+
+		"while adhering to %s grammar, vocabulary, and cultural sensitivities.\n"+
+		"Produce only the %s translation, without any additional explanations or commentary. "+
+		"Please translate the following %s text into %s:\n\n\n%s",
+		src, dst, langName(sourceLang), langName(targetLang), langName(targetLang),
+		langName(sourceLang), langName(targetLang), strings.TrimSpace(text))
+}
+
+// cleanTranslation keeps the first line of the reply and strips surrounding
+// quotes and a trailing period, which models sometimes add to short phrases.
 func cleanTranslation(s string) string {
 	s = strings.TrimSpace(s)
-	s = strings.Trim(s, `"'`)
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	s = strings.Trim(strings.TrimSpace(s), `"'`)
+	s = strings.TrimSuffix(s, ".")
 	return strings.TrimSpace(s)
 }
 
 // langName converts a BCP-47 language code to a human-readable name for prompts.
 func langName(code string) string {
 	switch code {
+	case "en":
+		return "English"
 	case "nl":
 		return "Dutch"
 	case "fr":

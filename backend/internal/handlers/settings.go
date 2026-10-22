@@ -20,10 +20,11 @@ type SettingsHandler struct {
 	queries *database.Queries
 	pool    *llm.ClientPool
 	timeout time.Duration
+	numCtx  int
 }
 
-func NewSettingsHandler(q *database.Queries, pool *llm.ClientPool, timeout time.Duration) *SettingsHandler {
-	return &SettingsHandler{queries: q, pool: pool, timeout: timeout}
+func NewSettingsHandler(q *database.Queries, pool *llm.ClientPool, timeout time.Duration, numCtx int) *SettingsHandler {
+	return &SettingsHandler{queries: q, pool: pool, timeout: timeout, numCtx: numCtx}
 }
 
 func (h *SettingsHandler) ListProviders(w http.ResponseWriter, r *http.Request) {
@@ -286,6 +287,7 @@ func (h *SettingsHandler) reloadPool(r *http.Request) {
 			Timeout:      h.timeout,
 			ProviderID:   p.ID,
 			Tags:         p.Tags,
+			NumCtx:       h.numCtx,
 		}
 	}
 	h.pool.Reload(configs)

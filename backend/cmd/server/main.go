@@ -89,6 +89,7 @@ func main() {
 			Timeout:      genTimeout,
 			ProviderID:   p.ID,
 			Tags:         p.Tags,
+			NumCtx:       cfg.Ollama.NumCtx,
 		}
 	}
 	clientPool := llm.NewClientPool(provConfigs)
@@ -127,7 +128,7 @@ func main() {
 	recipeHandler := handlers.NewRecipeHandler(queries, imageSearcher, clientPool)
 	generateHandler := handlers.NewGenerateHandler(orchestrator, queries)
 	mealPlanHandler := handlers.NewMealPlanHandler(queries, orchestrator, cfg.Search.Timeout, translator)
-	settingsHandler := handlers.NewSettingsHandler(queries, clientPool, genTimeout)
+	settingsHandler := handlers.NewSettingsHandler(queries, clientPool, genTimeout, cfg.Ollama.NumCtx)
 	pendingHandler := handlers.NewPendingHandler(queries, imageSearcher, hub)
 
 	bgGenerator := handlers.NewBackgroundGenerator(queries, orchestrator, hub, imageSearcher)

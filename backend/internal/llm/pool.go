@@ -16,6 +16,7 @@ type ProviderConfig struct {
 	Timeout      time.Duration
 	ProviderID   int
 	Tags         []string
+	NumCtx       int // Ollama num_ctx override; 0 = server default
 }
 
 type ClientPool struct {
@@ -33,7 +34,7 @@ func NewClientPool(providers []ProviderConfig) *ClientPool {
 func (p *ClientPool) buildClients(providers []ProviderConfig) {
 	clients := make([]*Client, 0, len(providers))
 	for _, prov := range providers {
-		clients = append(clients, NewClient(prov.Host, prov.Model, prov.ProviderType, prov.Timeout, prov.ProviderID, prov.Tags))
+		clients = append(clients, NewClient(prov))
 	}
 	p.clients = clients
 	p.next = 0

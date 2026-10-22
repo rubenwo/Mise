@@ -24,7 +24,7 @@ func NewGenerateHandler(o *llm.Orchestrator, q *database.Queries) *GenerateHandl
 
 // avoidTitlesFromFingerprints returns up to 30 bare titles to seed the avoid
 // list passed to the orchestrator. Bare titles cost the fewest tokens; the
-// SystemPromptWithAvoid helper is the authoritative cap.
+// GenerationSystemPrompt helper is the authoritative cap.
 func avoidTitlesFromFingerprints(fps []database.RecipeFingerprint) []string {
 	n := min(len(fps), 30)
 	out := make([]string, n)

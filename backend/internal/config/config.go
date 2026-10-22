@@ -38,6 +38,9 @@ type OllamaConfig struct {
 	Model             string        `yaml:"model"`
 	GenerationTimeout time.Duration `yaml:"generation_timeout"`
 	MaxToolIterations int           `yaml:"max_tool_iterations"`
+	// NumCtx sets Ollama's context window (num_ctx) on every request. 0 leaves
+	// the server default, which Ollama picks from VRAM and can be as low as 4k.
+	NumCtx int `yaml:"num_ctx"`
 }
 
 type SearchConfig struct {

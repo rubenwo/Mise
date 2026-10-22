@@ -62,7 +62,7 @@ func (o *Orchestrator) GenerateWithTag(ctx context.Context, userPrompt string, a
 	events <- SSEEvent{Type: "status", Message: fmt.Sprintf("Starting recipe generation (using %s)...", client.Model())}
 
 	messages := []Message{
-		{Role: "system", Content: SystemPromptWithAvoid(avoidTitles)},
+		{Role: "system", Content: GenerationSystemPrompt(o.tools, avoidTitles)},
 		{Role: "user", Content: userPrompt},
 	}
 
@@ -83,9 +83,9 @@ func (o *Orchestrator) GenerateWithTag(ctx context.Context, userPrompt string, a
 				events <- SSEEvent{Type: "status", Message: "Reformatting response as JSON..."}
 				fixMessages := append(messages, Message{
 					Role:    "user",
-					Content: "Your response was not valid JSON. Please output only the recipe JSON object with no other text.",
+					Content: "That was not a valid recipe JSON object. Respond with only the complete recipe JSON object.",
 				})
-				fixResp, fixErr := client.ChatJSON(ctx, fixMessages)
+				fixResp, fixErr := client.ChatJSON(ctx, fixMessages, RecipeSchema(nil))
 				if fixErr != nil {
 					return nil, messages, err // return original parse error
 				}
@@ -129,7 +129,7 @@ func (o *Orchestrator) GenerateWithTag(ctx context.Context, userPrompt string, a
 	}
 
 	events <- SSEEvent{Type: "status", Message: "Max iterations reached, generating final recipe..."}
-	resp, err := client.ChatJSON(ctx, messages)
+	resp, err := client.ChatJSON(ctx, messages, RecipeSchema(nil))
 	if err != nil {
 		return nil, messages, fmt.Errorf("final chat request failed: %w", err)
 	}
@@ -160,7 +160,7 @@ func (o *Orchestrator) GenerateRefine(ctx context.Context, userPrompt string, ev
 		{Role: "user", Content: userPrompt},
 	}
 
-	resp, err := client.ChatJSON(ctx, messages)
+	resp, err := client.ChatJSON(ctx, messages, RecipeSchema(nil))
 	if err != nil {
 		return nil, messages, fmt.Errorf("chat request failed: %w", err)
 	}
@@ -236,7 +236,7 @@ func (o *Orchestrator) ScanIngredient(ctx context.Context, imageB64 string) ([]m
 		},
 	}
 
-	resp, err := client.ChatJSON(ctx, messages)
+	resp, err := client.ChatJSON(ctx, messages, ScanSchema)
 	if err != nil {
 		return nil, fmt.Errorf("vision chat failed: %w", err)
 	}
@@ -273,7 +273,7 @@ func (o *Orchestrator) DeduplicateIngredients(ctx context.Context, groups [][]mo
 		{Role: "user", Content: BuildDeduplicateIngredientsPrompt(string(groupsJSON))},
 	}
 
-	resp, err := client.ChatJSON(ctx, messages)
+	resp, err := client.ChatJSON(ctx, messages, DedupSchema)
 	if err != nil {
 		return nil, fmt.Errorf("LLM dedup chat failed: %w", err)
 	}

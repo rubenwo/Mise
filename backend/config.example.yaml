@@ -22,18 +22,25 @@ database:
 #   chat                 — cooking assistant chat
 #   search               — AI-powered recipe search
 #   translation          — ingredient translation (e.g. for Albert Heijn ordering)
+#   inventory            — identify products from photos (needs a vision model)
+#   deduplication        — merge shopping-list items the deterministic pass can't
 #
 # A single provider can carry multiple tags.
-# Recommended two-provider setup:
+# Recommended two-provider setup (~32 GB VRAM):
 #
-#   Provider 1  model: qwen3.5:9b       tags: generation, background-generation, chat, search
+#   Provider 1  model: gemma4:26b         tags: generation, background-generation, chat, search, inventory, deduplication
 #   Provider 2  model: translategemma:4b  tags: translation
 #
 ollama:
   host: "http://localhost:11434"
-  model: "qwen3.5:9b"
+  model: "gemma4:26b"
   generation_timeout: 120s
   max_tool_iterations: 5
+  # Context window sent as num_ctx on every Ollama request. 0 keeps Ollama's
+  # default, which depends on VRAM and can be as small as 4096 tokens: too
+  # little for generation with tool results. 16384 suits gemma4:26b on 32 GB.
+  # Every model on the server is loaded with this size, so raising it costs VRAM.
+  num_ctx: 16384
 
 search:
   timeout: 10s

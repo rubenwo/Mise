@@ -29,18 +29,23 @@ type Client struct {
 	healthy      atomic.Bool
 	providerID   int
 	tags         []string
+	// numCtx overrides Ollama's context window when > 0. Ollama otherwise
+	// picks a VRAM-based default that can be as small as 4k tokens, which
+	// silently truncates long tool loops.
+	numCtx int
 }
 
-func NewClient(baseURL, model string, providerType ProviderType, timeout time.Duration, providerID int, tags []string) *Client {
+func NewClient(cfg ProviderConfig) *Client {
 	c := &Client{
-		baseURL:      baseURL,
-		model:        model,
-		providerType: providerType,
+		baseURL:      cfg.Host,
+		model:        cfg.Model,
+		providerType: cfg.ProviderType,
 		httpClient: &http.Client{
-			Timeout: timeout,
+			Timeout: cfg.Timeout,
 		},
-		providerID: providerID,
-		tags:       tags,
+		providerID: cfg.ProviderID,
+		tags:       cfg.Tags,
+		numCtx:     cfg.NumCtx,
 	}
 	c.healthy.Store(true)
 	return c
@@ -81,16 +86,17 @@ type ChatResponse struct {
 // ---- Ollama-native wire types ----
 
 type ollamaChatRequest struct {
-	Model    string         `json:"model"`
-	Messages []Message      `json:"messages"`
-	Tools    []Tool         `json:"tools,omitempty"`
-	Stream   bool           `json:"stream"`
-	Format   string         `json:"format,omitempty"`
-	Options  *ollamaOptions `json:"options,omitempty"`
+	Model    string          `json:"model"`
+	Messages []Message       `json:"messages"`
+	Tools    []Tool          `json:"tools,omitempty"`
+	Stream   bool            `json:"stream"`
+	Format   json.RawMessage `json:"format,omitempty"` // "json" or a JSON schema
+	Options  *ollamaOptions  `json:"options,omitempty"`
 }
 
 type ollamaOptions struct {
 	Temperature *float64 `json:"temperature,omitempty"`
+	NumCtx      int      `json:"num_ctx,omitempty"`
 }
 
 type ollamaChatResponse struct {
@@ -112,7 +118,13 @@ type openAIChatRequest struct {
 }
 
 type openAIRespFormat struct {
-	Type string `json:"type"`
+	Type       string            `json:"type"`
+	JSONSchema *openAIJSONSchema `json:"json_schema,omitempty"`
+}
+
+type openAIJSONSchema struct {
+	Name   string          `json:"name"`
+	Schema json.RawMessage `json:"schema"`
 }
 
 // openAIMessage mirrors the OpenAI wire format. Content is a pointer so it can
@@ -155,34 +167,54 @@ func (c *Client) Chat(ctx context.Context, messages []Message, tools []Tool) (*C
 		Messages: messages,
 		Tools:    tools,
 		Stream:   false,
+		Options:  c.ollamaOptions(nil),
 	})
 }
 
-// jsonModeTemperature is used for all JSON-strict tool calls. Lower temperature
-// reduces schema drift on small models (9B-35B) without harming creativity for
-// recipe content, which is shaped by the user prompt rather than randomness.
+// ollamaOptions returns request options, or nil when there is nothing to set.
+func (c *Client) ollamaOptions(temperature *float64) *ollamaOptions {
+	if temperature == nil && c.numCtx <= 0 {
+		return nil
+	}
+	return &ollamaOptions{Temperature: temperature, NumCtx: c.numCtx}
+}
+
+// jsonModeTemperature is used for all JSON-strict calls. Lower temperature
+// reduces schema drift on small models without harming recipe creativity,
+// which is shaped by the prompt rather than randomness.
 var jsonModeTemperature = 0.2
 
-// ChatJSON calls the model requesting a JSON-formatted response (no tools).
-// Uses a low temperature so JSON-strict outputs (recipes, scans, dedup, translation)
-// stay on-format for small models.
-func (c *Client) ChatJSON(ctx context.Context, messages []Message) (*ChatResponse, error) {
+// ChatJSON calls the model requesting a JSON response (no tools), at a low
+// temperature so outputs stay on-format.
+//
+// With a non-nil schema the output is grammar-constrained to that JSON schema
+// (Ollama structured outputs / OpenAI json_schema), so required fields and
+// types are guaranteed rather than merely requested. A nil schema falls back
+// to plain JSON mode.
+func (c *Client) ChatJSON(ctx context.Context, messages []Message, schema *Schema) (*ChatResponse, error) {
 	if c.providerType == ProviderTypeOpenAICompat {
-		req := openAIChatRequest{
+		format := &openAIRespFormat{Type: "json_object"}
+		if schema != nil {
+			format = &openAIRespFormat{Type: "json_schema", JSONSchema: &openAIJSONSchema{Name: schema.Name, Schema: schema.JSON}}
+		}
+		return c.doChatOpenAIRaw(ctx, openAIChatRequest{
 			Model:          c.model,
 			Messages:       toOpenAIMessages(messages),
 			Stream:         false,
-			ResponseFormat: &openAIRespFormat{Type: "json_object"},
+			ResponseFormat: format,
 			Temperature:    &jsonModeTemperature,
-		}
-		return c.doChatOpenAIRaw(ctx, req)
+		})
+	}
+	format := json.RawMessage(`"json"`)
+	if schema != nil {
+		format = schema.JSON
 	}
 	return c.doChatOllama(ctx, ollamaChatRequest{
 		Model:    c.model,
 		Messages: messages,
 		Stream:   false,
-		Format:   "json",
-		Options:  &ollamaOptions{Temperature: &jsonModeTemperature},
+		Format:   format,
+		Options:  c.ollamaOptions(&jsonModeTemperature),
 	})
 }
 
@@ -214,6 +246,9 @@ func (c *Client) doChatOllama(ctx context.Context, req ollamaChatRequest) (*Chat
 	var r ollamaChatResponse
 	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
 		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+	if r.DoneReason == "length" {
+		log.Printf("Warning: %s hit its token limit and the output is truncated (consider raising ollama.num_ctx)", c.model)
 	}
 
 	return &ChatResponse{

@@ -191,7 +191,7 @@ func (h *RecipeHandler) rankCandidates(ctx context.Context, client *llm.Client, 
 		rankMessages = append(rankMessages, llm.Message{Role: m.Role, Content: m.Content})
 	}
 
-	resp, err := client.ChatJSON(ctx, rankMessages)
+	resp, err := client.ChatJSON(ctx, rankMessages, llm.RankSchema)
 	if err != nil {
 		return RecommendResponse{}, fmt.Errorf("rank chat failed: %w", err)
 	}
