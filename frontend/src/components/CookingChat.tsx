@@ -1,0 +1,103 @@
+import { useState, useEffect, useRef, type FormEvent } from 'react';
+import ReactMarkdown from 'react-markdown';
+import { getChatHistory, sendChatMessage } from '../api/client';
+import { useFetch } from '../hooks/useFetch';
+import type { ChatMessage } from '../types';
+
+// Locally-added messages get string ids until the history is reloaded.
+type DisplayMessage = Omit<ChatMessage, 'id'> & { id?: number | string };
+
+// crypto.randomUUID is only defined in secure contexts (https / localhost),
+// which broke chat submission when the app is opened over plain HTTP on a
+// LAN IP. These IDs are just React keys, so a non-crypto fallback is fine.
+const newMsgId = () =>
+  (typeof crypto !== 'undefined' && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+
+export default function CookingChat({ recipeId }: { recipeId: number }) {
+  const history = useFetch<DisplayMessage[]>(`chat:${recipeId}`, signal => getChatHistory(recipeId, signal));
+  const messages = history.data ?? [];
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const shouldScrollRef = useRef(false);
+
+  useEffect(() => {
+    if (shouldScrollRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [history.data]);
+
+  const append = (msg: DisplayMessage) => history.setData(prev => [...(prev ?? []), msg]);
+
+  const handleSend = async (e: FormEvent) => {
+    e.preventDefault();
+    const message = input.trim();
+    if (!message || loading) return;
+
+    shouldScrollRef.current = true;
+    setInput('');
+    const replyMsgId = newMsgId();
+    append({ id: newMsgId(), role: 'user', content: message });
+    setLoading(true);
+
+    try {
+      const result = await sendChatMessage(recipeId, message);
+      append({ id: replyMsgId, role: 'assistant', content: result.response });
+    } catch {
+      append({ id: replyMsgId, role: 'assistant', content: 'Something went wrong. Please try again.' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Matches the previous behaviour: render nothing until history arrives,
+  // but still show the chat if loading the history failed.
+  const loadingHistory = history.loading && !history.data;
+
+  if (loadingHistory) return null;
+
+  return (
+    <div className="cooking-chat">
+      <h3>Ask the Chef</h3>
+      <div className="chat-messages">
+        {messages.length === 0 && (
+          <p className="chat-empty">Have a question while cooking? Ask here — e.g. "What can I substitute for rice wine?"</p>
+        )}
+        {messages.map((msg, i) => (
+          <div key={msg.id ?? i} className={`chat-message chat-message-${msg.role}`}>
+            <span className="chat-role">{msg.role === 'user' ? 'You' : 'Chef'}</span>
+            <div className="chat-bubble">
+              {msg.role === 'assistant'
+                ? <ReactMarkdown>{msg.content}</ReactMarkdown>
+                : <p>{msg.content}</p>}
+            </div>
+          </div>
+        ))}
+        {loading && (
+          <div className="chat-message chat-message-assistant">
+            <span className="chat-role">Chef</span>
+            <div className="chat-bubble">
+              <p className="chat-thinking">Thinking…</p>
+            </div>
+          </div>
+        )}
+        <div ref={bottomRef} />
+      </div>
+      <form className="chat-input-form" onSubmit={handleSend}>
+        <input
+          type="text"
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          placeholder="Ask a cooking question…"
+          disabled={loading}
+          className="chat-input"
+        />
+        <button type="submit" className="btn btn-primary" disabled={loading || !input.trim()}>
+          {loading ? '…' : 'Ask'}
+        </button>
+      </form>
+    </div>
+  );
+}
