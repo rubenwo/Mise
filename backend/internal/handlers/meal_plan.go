@@ -522,6 +522,13 @@ var ingredientAliases = map[string]string{
 	"filbert":   "hazelnut", // old/regional name for hazelnut
 }
 
+// nonPluralNames end in "s" but are not plurals, so the trailing "s" is kept.
+var nonPluralNames = map[string]bool{
+	"molasses": true,
+	"bitters":  true,
+	"grits":    true,
+}
+
 // ingredientDensity maps a normalized ingredient name to its density in g/mL,
 // used to convert between weight and volume for the same ingredient.
 var ingredientDensity = map[string]float64{
@@ -581,8 +588,10 @@ func normalizeIngredientName(name string) string {
 	}
 	name = strings.Join(words, " ")
 	// Normalize simple plurals: "eggs" → "egg", "onions" → "onion"
-	// Avoid stripping from words ending in "ss" (e.g. "molasses").
-	if len(name) > 3 && strings.HasSuffix(name, "s") && !strings.HasSuffix(name, "ss") {
+	// Skip "-ss"/"-us" words ("swiss", "hummus", "asparagus") and known
+	// singular-looking exceptions like "molasses".
+	if len(name) > 3 && strings.HasSuffix(name, "s") &&
+		!strings.HasSuffix(name, "ss") && !strings.HasSuffix(name, "us") && !nonPluralNames[name] {
 		name = name[:len(name)-1]
 	}
 	// Apply synonym/alias table for known equivalents (flour variants, broth↔stock, etc.)
