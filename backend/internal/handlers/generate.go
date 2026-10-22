@@ -26,32 +26,12 @@ func NewGenerateHandler(o *llm.Orchestrator, q *database.Queries) *GenerateHandl
 // list passed to the orchestrator. Bare titles cost the fewest tokens; the
 // SystemPromptWithAvoid helper is the authoritative cap.
 func avoidTitlesFromFingerprints(fps []database.RecipeFingerprint) []string {
-	const cap = 30
-	n := len(fps)
-	if n > cap {
-		n = cap
-	}
+	n := min(len(fps), 30)
 	out := make([]string, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		out[i] = fps[i].Title
 	}
 	return out
-}
-
-// emitNearDuplicateWarnings checks recipe against existing fingerprints and
-// writes any near_duplicate SSE events to w before the recipe event is written.
-func emitNearDuplicateWarnings(w http.ResponseWriter, flusher http.Flusher, recipe models.Recipe, idx int, fingerprints []database.RecipeFingerprint) {
-	for _, dup := range findNearDuplicates(recipe, fingerprints) {
-		event := llm.SSEEvent{
-			Type:    "near_duplicate",
-			Index:   idx,
-			Message: fmt.Sprintf("Similar to existing recipe: %q", dup.Title),
-			Data:    map[string]any{"id": dup.ID, "title": dup.Title},
-		}
-		data, _ := json.Marshal(event)
-		fmt.Fprintf(w, "data: %s\n\n", data)
-		flusher.Flush()
-	}
 }
 
 func (h *GenerateHandler) Single(w http.ResponseWriter, r *http.Request) {
@@ -89,15 +69,7 @@ func (h *GenerateHandler) Batch(w http.ResponseWriter, r *http.Request) {
 		req.Count = 10
 	}
 
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		writeError(w, http.StatusInternalServerError, "streaming not supported")
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
+	stream := newSSEStream(w)
 
 	fps, err := h.queries.ListRecipeFingerprints(r.Context())
 	if err != nil {
@@ -172,23 +144,14 @@ func (h *GenerateHandler) Batch(w http.ResponseWriter, r *http.Request) {
 		close(allEvents)
 	}()
 
-	// Stream all events to the client. Intercept recipe events to emit
-	// near_duplicate warnings before forwarding the recipe itself.
+	// Stream all events to the client. Keep draining after a disconnect so
+	// the generation goroutines can finish and their chats get persisted.
 	for event := range allEvents {
-		if event.Type == "recipe" {
-			if recipe, ok := event.Data.(models.Recipe); ok {
-				emitNearDuplicateWarnings(w, flusher, recipe, event.Index, fps)
-			}
-		}
-		data, _ := json.Marshal(event)
-		if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
-			return
-		}
-		flusher.Flush()
+		sendWithNearDuplicates(stream, event, fps)
 	}
 
 	// All goroutines finished; drain results and persist chats.
-	for i := 0; i < req.Count; i++ {
+	for range req.Count {
 		res := <-results
 		h.saveChat(res.prompt, res.messages)
 	}
@@ -228,16 +191,7 @@ func (h *GenerateHandler) Refine(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		writeError(w, http.StatusInternalServerError, "streaming not supported")
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-
+	stream := newSSEStream(w)
 	prompt := llm.BuildRefinePrompt(req.Recipe, req.Feedback)
 	events := make(chan llm.SSEEvent, 10)
 
@@ -251,26 +205,15 @@ func (h *GenerateHandler) Refine(w http.ResponseWriter, r *http.Request) {
 		h.saveChat(prompt, messages)
 	}()
 
+	// Drain until the producer closes the channel, even after a disconnect,
+	// so the generation goroutine never blocks on a full buffer.
 	for event := range events {
-		data, _ := json.Marshal(event)
-		if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
-			return
-		}
-		flusher.Flush()
+		stream.send(event)
 	}
 }
 
 func (h *GenerateHandler) streamGeneration(w http.ResponseWriter, r *http.Request, prompt string, avoidTitles []string, fingerprints []database.RecipeFingerprint) {
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		writeError(w, http.StatusInternalServerError, "streaming not supported")
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-
+	stream := newSSEStream(w)
 	events := make(chan llm.SSEEvent, 10)
 
 	go func() {
@@ -284,19 +227,24 @@ func (h *GenerateHandler) streamGeneration(w http.ResponseWriter, r *http.Reques
 	}()
 
 	for event := range events {
-		// Emit near_duplicate warnings before the recipe event so the
-		// frontend can attach them to the recipe before rendering.
-		if event.Type == "recipe" {
-			if recipe, ok := event.Data.(models.Recipe); ok {
-				emitNearDuplicateWarnings(w, flusher, recipe, event.Index, fingerprints)
-			}
-		}
-		data, _ := json.Marshal(event)
-		if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
-			return
-		}
-		flusher.Flush()
+		sendWithNearDuplicates(stream, event, fingerprints)
 	}
+}
+
+// sendWithNearDuplicates emits near_duplicate warnings before a recipe event
+// so the frontend can attach them to the recipe before rendering it.
+func sendWithNearDuplicates(stream *sseStream, event llm.SSEEvent, fingerprints []database.RecipeFingerprint) {
+	if recipe, ok := event.Data.(models.Recipe); ok && event.Type == "recipe" {
+		for _, dup := range findNearDuplicates(recipe, fingerprints) {
+			stream.send(llm.SSEEvent{
+				Type:    "near_duplicate",
+				Index:   event.Index,
+				Message: fmt.Sprintf("Similar to existing recipe: %q", dup.Title),
+				Data:    map[string]any{"id": dup.ID, "title": dup.Title},
+			})
+		}
+	}
+	stream.send(event)
 }
 
 func (h *GenerateHandler) saveChat(prompt string, messages []llm.Message) {

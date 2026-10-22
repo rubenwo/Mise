@@ -161,16 +161,7 @@ func (h *PendingHandler) FetchImage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *PendingHandler) Stream(w http.ResponseWriter, r *http.Request) {
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		writeError(w, http.StatusInternalServerError, "streaming not supported")
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-
+	stream := newSSEStream(w)
 	ch := h.hub.Subscribe()
 	defer h.hub.Unsubscribe(ch)
 
@@ -180,11 +171,10 @@ func (h *PendingHandler) Stream(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				return
 			}
-			data, _ := json.Marshal(ev)
-			if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
+			// Hub publishes are non-blocking, so returning here is safe.
+			if stream.send(ev); stream.disconnected() {
 				return
 			}
-			flusher.Flush()
 		case <-r.Context().Done():
 			return
 		}
