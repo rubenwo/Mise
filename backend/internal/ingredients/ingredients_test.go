@@ -1,4 +1,4 @@
-package handlers
+package ingredients
 
 import (
 	"math"
@@ -25,8 +25,8 @@ func TestNormalizeIngredientName(t *testing.T) {
 		{"  Courgettes ", "zucchini"},
 	}
 	for _, tt := range tests {
-		if got := normalizeIngredientName(tt.in); got != tt.want {
-			t.Errorf("normalizeIngredientName(%q) = %q, want %q", tt.in, got, tt.want)
+		if got := Normalize(tt.in); got != tt.want {
+			t.Errorf("Normalize(%q) = %q, want %q", tt.in, got, tt.want)
 		}
 	}
 }
@@ -81,42 +81,24 @@ func TestRoundAmount(t *testing.T) {
 	}
 }
 
-func TestLevenshteinDistance(t *testing.T) {
-	tests := []struct {
-		a, b string
-		want int
-	}{
-		{"kitten", "sitting", 3},
-		{"", "abc", 3},
-		{"abc", "", 3},
-		{"same", "same", 0},
-		{"café", "cafe", 1},
-	}
-	for _, tt := range tests {
-		if got := levenshteinDistance(tt.a, tt.b); got != tt.want {
-			t.Errorf("levenshteinDistance(%q, %q) = %d, want %d", tt.a, tt.b, got, tt.want)
-		}
-	}
-}
-
 func TestIngredientNameSimilarity(t *testing.T) {
-	if got := ingredientNameSimilarity("chicken breast", "chickenbreast"); got != 1.0 {
+	if got := nameSimilarity("chicken breast", "chickenbreast"); got != 1.0 {
 		t.Errorf("compact-equal names: got %v, want 1.0", got)
 	}
-	if got := ingredientNameSimilarity("tomato", "chocolate"); got >= 0.85 {
+	if got := nameSimilarity("tomato", "chocolate"); got >= 0.85 {
 		t.Errorf("unrelated names scored %v, want < 0.85", got)
 	}
 }
 
 func TestFuzzyCanonicalNames(t *testing.T) {
-	got := fuzzyCanonicalNames([]string{"chickenbreast", "chicken breast", "tomato"})
+	got := canonicalNames([]string{"chickenbreast", "chicken breast", "tomato"})
 	want := map[string]string{
 		"chickenbreast":  "chicken breast",
 		"chicken breast": "chicken breast",
 		"tomato":         "tomato",
 	}
 	if !reflect.DeepEqual(got, want) {
-		t.Errorf("fuzzyCanonicalNames = %v, want %v", got, want)
+		t.Errorf("canonicalNames = %v, want %v", got, want)
 	}
 }
 
@@ -137,9 +119,9 @@ func TestConsolidateIngredients(t *testing.T) {
 		// countable units round up
 		{Name: "Onion", Amount: 2, Unit: "", Recipes: []string{"B"}},
 	}
-	got := consolidateIngredients(in)
+	got := Consolidate(in)
 	if !reflect.DeepEqual(got, want) {
-		t.Errorf("consolidateIngredients =\n  %+v\nwant\n  %+v", got, want)
+		t.Errorf("Consolidate =\n  %+v\nwant\n  %+v", got, want)
 	}
 }
 
@@ -148,24 +130,43 @@ func TestConsolidateIngredients_UnknownDensityStaysSplit(t *testing.T) {
 		{Name: "Cheese", Amount: 100, Unit: "g", Recipes: []string{"A"}},
 		{Name: "cheese", Amount: 1, Unit: "cup", Recipes: []string{"B"}},
 	}
-	got := consolidateIngredients(in)
+	got := Consolidate(in)
 	if len(got) != 2 {
 		t.Fatalf("expected cheese to stay split across g/ml, got %+v", got)
 	}
 
-	dupes := findRemainingDuplicates(got)
+	dupes := FindRemainingDuplicates(got)
 	if len(dupes) != 1 || len(dupes[0]) != 2 {
-		t.Fatalf("findRemainingDuplicates = %+v, want one group of two", dupes)
+		t.Fatalf("FindRemainingDuplicates = %+v, want one group of two", dupes)
 	}
 
 	merged := []models.AggregatedIngredient{{Name: "Cheese", Amount: 340, Unit: "g", Recipes: []string{"A", "B"}}}
 	withOther := append(got, models.AggregatedIngredient{Name: "Apple", Amount: 1, Unit: ""})
-	final := applyLLMDedup(withOther, dupes, merged)
+	final := ApplyMerged(withOther, dupes, merged)
 	want := []models.AggregatedIngredient{
 		{Name: "Apple", Amount: 1, Unit: ""},
 		{Name: "Cheese", Amount: 340, Unit: "g", Recipes: []string{"A", "B"}},
 	}
 	if !reflect.DeepEqual(final, want) {
-		t.Errorf("applyLLMDedup =\n  %+v\nwant\n  %+v", final, want)
+		t.Errorf("ApplyMerged =\n  %+v\nwant\n  %+v", final, want)
+	}
+}
+
+func TestAggregate_ScalesToPlannedServings(t *testing.T) {
+	plan := &models.MealPlan{Recipes: []models.MealPlanRecipe{
+		{Servings: 4, Recipe: models.Recipe{Title: "Pancakes", Servings: 2, Ingredients: []models.Ingredient{
+			{Name: "Milk", Amount: 250, Unit: "ml"},
+			{Name: "Eggs", Amount: 1, Unit: ""},
+		}}},
+		{Servings: 2, Recipe: models.Recipe{Title: "Omelette", Servings: 2, Ingredients: []models.Ingredient{
+			{Name: "egg", Amount: 3, Unit: ""},
+		}}},
+	}}
+	want := []models.AggregatedIngredient{
+		{Name: "Egg", Amount: 5, Unit: "", Recipes: []string{"Omelette", "Pancakes"}},
+		{Name: "Milk", Amount: 500, Unit: "ml", Recipes: []string{"Pancakes"}},
+	}
+	if got := Aggregate(plan); !reflect.DeepEqual(got, want) {
+		t.Errorf("Aggregate =\n  %+v\nwant\n  %+v", got, want)
 	}
 }

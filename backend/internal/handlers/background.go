@@ -109,7 +109,7 @@ func (b *BackgroundGenerator) Stop() {
 type bgSettings struct {
 	enabled    bool
 	days       map[time.Weekday]bool // which weekdays to run on
-	timeHour   int                  // -1 if not configured
+	timeHour   int                   // -1 if not configured
 	timeMin    int
 	count      int
 	servings   int
