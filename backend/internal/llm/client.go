@@ -33,6 +33,10 @@ type Client struct {
 	// picks a VRAM-based default that can be as small as 4k tokens, which
 	// silently truncates long tool loops.
 	numCtx int
+	// think enables reasoning for tool-loop/chat calls on models that support
+	// it. Structured (ChatJSON) calls never think: reasoning models such as
+	// gemma4 otherwise spend thousands of tokens on trivial tasks.
+	think bool
 }
 
 func NewClient(cfg ProviderConfig) *Client {
@@ -46,6 +50,7 @@ func NewClient(cfg ProviderConfig) *Client {
 		providerID: cfg.ProviderID,
 		tags:       cfg.Tags,
 		numCtx:     cfg.NumCtx,
+		think:      cfg.Think,
 	}
 	c.healthy.Store(true)
 	return c
@@ -91,7 +96,10 @@ type ollamaChatRequest struct {
 	Tools    []Tool          `json:"tools,omitempty"`
 	Stream   bool            `json:"stream"`
 	Format   json.RawMessage `json:"format,omitempty"` // "json" or a JSON schema
-	Options  *ollamaOptions  `json:"options,omitempty"`
+	// Think is always sent: some models (gemma4) reason by default when it is
+	// omitted. Models without thinking support ignore false.
+	Think   bool           `json:"think"`
+	Options *ollamaOptions `json:"options,omitempty"`
 }
 
 type ollamaOptions struct {
@@ -168,6 +176,7 @@ func (c *Client) Chat(ctx context.Context, messages []Message, tools []Tool) (*C
 		Tools:    tools,
 		Stream:   false,
 		Options:  c.ollamaOptions(nil),
+		Think:    c.think,
 	})
 }
 

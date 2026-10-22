@@ -26,10 +26,14 @@ database:
 #   deduplication        — merge shopping-list items the deterministic pass can't
 #
 # A single provider can carry multiple tags.
-# Recommended two-provider setup (~32 GB VRAM):
+# Recommended setup (~32 GB VRAM): one gemma4:26b provider with every tag.
+# Benchmarked with the e2e suite (internal/llm/e2e_test.go) against
+# qwen3.6:35b, qwen3.8:27b, gpt-oss:20b, qwen2.5:7b and translategemma:4b,
+# it was fastest and most accurate for every task, including translation and
+# shopping-list merging, and one resident model avoids swapping in VRAM.
 #
-#   Provider 1  model: gemma4:26b         tags: generation, background-generation, chat, search, inventory, deduplication
-#   Provider 2  model: translategemma:4b  tags: translation
+#   Provider 1  model: gemma4:26b  tags: generation, background-generation, chat, search,
+#                                        translation, inventory, deduplication
 #
 ollama:
   host: "http://localhost:11434"
@@ -41,6 +45,9 @@ ollama:
   # little for generation with tool results. 16384 suits gemma4:26b on 32 GB.
   # Every model on the server is loaded with this size, so raising it costs VRAM.
   num_ctx: 16384
+  # Reasoning for generation and chat. Off: on gemma4 it made generation
+  # 3-10x slower without better recipes. Structured calls never reason.
+  think: false
 
 search:
   timeout: 10s

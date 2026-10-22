@@ -41,6 +41,9 @@ type OllamaConfig struct {
 	// NumCtx sets Ollama's context window (num_ctx) on every request. 0 leaves
 	// the server default, which Ollama picks from VRAM and can be as low as 4k.
 	NumCtx int `yaml:"num_ctx"`
+	// Think enables model reasoning for generation and chat (not for structured
+	// calls). Off by default: on gemma4 it multiplies latency for little gain.
+	Think bool `yaml:"think"`
 }
 
 type SearchConfig struct {

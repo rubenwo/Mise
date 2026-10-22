@@ -319,19 +319,19 @@ Respond with JSON in this shape, one item per distinct product:
 // BuildDeduplicateIngredientsPrompt asks the LLM to merge groups of ingredients
 // that share a name but couldn't be merged deterministically, usually because
 // they mix weight and volume for an ingredient without a known density.
-func BuildDeduplicateIngredientsPrompt(groupsJSON string) string {
+func BuildDeduplicateIngredientsPrompt(groupsJSON string, groupCount int) string {
 	return fmt.Sprintf(`You are consolidating a grocery shopping list. Each group below lists the same item in different units that could not be merged automatically.
 
 Groups:
 %s
 
-Merge each group into exactly one item and return them in the same order as the groups:
-{"items": [{"name": "cheese", "amount": 350, "unit": "g"}]}
+Return exactly one item per group, in the same order as the groups. There are %d groups, so return %d items.
 
+For each item:
 - name: generic English name, lowercase.
-- Convert every entry in the group to one unit using a typical density or weight for that ingredient, then add them up.
-- Prefer the unit you would buy in: g or kg for solids, ml or l for liquids, "" for whole items counted individually.
-- Round whole items (eggs, onions, lemons) up to a whole number; round weights and volumes to a sensible shopping amount.
+- calculation: convert EVERY entry in the group to one unit using a typical density or weight for that ingredient, and add them all up.
+- amount and unit: the total from the calculation. Prefer the unit you would buy in: g or kg for solids, ml or l for liquids, "" for whole items counted individually. Round whole items (eggs, onions, lemons) up to a whole number.
 
-Example: the group [{"name":"Parmesan","amount":100,"unit":"g"},{"name":"parmesan","amount":1,"unit":"cup"}] becomes {"name": "parmesan", "amount": 200, "unit": "g"}, because a cup of grated parmesan weighs about 100 g.`, groupsJSON)
+Example: the group [{"name":"Parmesan","amount":100,"unit":"g"},{"name":"parmesan","amount":1,"unit":"cup"}] becomes
+{"name": "parmesan", "calculation": "100 g + 1 cup grated (~100 g) = 200 g", "amount": 200, "unit": "g"}`, groupsJSON, groupCount, groupCount)
 }

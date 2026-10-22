@@ -2,12 +2,13 @@
 // Translations are cached so repeated calls for the same text are instant.
 //
 // Provider selection: only providers tagged "translation" are used. The prompt
-// follows TranslateGemma's required format, which also works for general
-// instruction-tuned models.
+// depends on the model: TranslateGemma gets its required template, other
+// models are asked for the supermarket search term (see translate).
 package translation
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
@@ -45,16 +46,11 @@ func (t *Translator) Translate(ctx context.Context, text, targetLang string) str
 		return text
 	}
 
-	// TranslateGemma expects a single user message in this exact format and
-	// replies with the bare translation, so no system prompt or JSON mode.
-	messages := []llm.Message{{Role: "user", Content: BuildPrompt(text, "en", targetLang)}}
-	resp, err := client.Chat(ctx, messages, nil)
+	translated, err := translate(ctx, client, text, targetLang)
 	if err != nil {
 		log.Printf("translation: LLM call failed for %q: %v", text, err)
 		return text
 	}
-
-	translated := cleanTranslation(resp.Message.Content)
 	if translated == "" {
 		return text
 	}
@@ -78,6 +74,48 @@ func (t *Translator) TranslateMany(ctx context.Context, texts []string, targetLa
 		out[i] = t.Translate(ctx, text, targetLang)
 	}
 	return out
+}
+
+// translate picks the prompt that suits the provider's model.
+//
+// TranslateGemma must be prompted with its own template, but it translates
+// bare ingredient names poorly ("spring onion" -> "jonagold"). A general
+// instruction model asked for the supermarket search term does far better
+// (11/12 exact matches vs 7-8/12 with gemma4:26b in the e2e suite), so that
+// is the default for any other model.
+func translate(ctx context.Context, client *llm.Client, text, targetLang string) (string, error) {
+	if strings.Contains(strings.ToLower(client.Model()), "translategemma") {
+		resp, err := client.Chat(ctx, []llm.Message{{Role: "user", Content: BuildPrompt(text, "en", targetLang)}}, nil)
+		if err != nil {
+			return "", err
+		}
+		return cleanTranslation(resp.Message.Content), nil
+	}
+
+	resp, err := client.ChatJSON(ctx, []llm.Message{
+		{Role: "system", Content: BuildSupermarketPrompt(targetLang)},
+		{Role: "user", Content: text},
+	}, llm.TranslationSchema)
+	if err != nil {
+		return "", err
+	}
+	var result struct {
+		Translation string `json:"translation"`
+	}
+	if err := json.Unmarshal([]byte(resp.Message.Content), &result); err != nil {
+		return "", fmt.Errorf("parsing response: %w", err)
+	}
+	return cleanTranslation(result.Translation), nil
+}
+
+// BuildSupermarketPrompt asks for the product name a shopper would search for.
+// The Dutch examples are tuned for Albert Heijn ordering.
+func BuildSupermarketPrompt(targetLang string) string {
+	examples := ""
+	if targetLang == "nl" {
+		examples = ` Examples: "minced garlic" -> "knoflook", "self-raising flour" -> "zelfrijzend bakmeel", "scallops" -> "coquilles", "double cream" -> "slagroom".`
+	}
+	return fmt.Sprintf(`Translate an English recipe ingredient into the %s product name a shopper would type into a supermarket search box. Use the everyday supermarket term, singular or plural as it is sold, without amounts, preparation or brand.%s Reply as {"translation": "<term>"}.`, langName(targetLang), examples)
 }
 
 // BuildPrompt renders TranslateGemma's prompt template

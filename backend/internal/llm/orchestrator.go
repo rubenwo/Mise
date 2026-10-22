@@ -61,6 +61,11 @@ func (o *Orchestrator) GenerateWithTag(ctx context.Context, userPrompt string, a
 
 	events <- SSEEvent{Type: "status", Message: fmt.Sprintf("Starting recipe generation (using %s)...", client.Model())}
 
+	// Some models (gemma4) treat system-prompt tool guidance as optional but
+	// reliably follow a short instruction at the end of the user turn.
+	if slices.ContainsFunc(o.tools, func(t Tool) bool { return t.Function.Name == "db_search" }) {
+		userPrompt += "\n\nStart by calling db_search."
+	}
 	messages := []Message{
 		{Role: "system", Content: GenerationSystemPrompt(o.tools, avoidTitles)},
 		{Role: "user", Content: userPrompt},
@@ -270,7 +275,7 @@ func (o *Orchestrator) DeduplicateIngredients(ctx context.Context, groups [][]mo
 	}
 
 	messages := []Message{
-		{Role: "user", Content: BuildDeduplicateIngredientsPrompt(string(groupsJSON))},
+		{Role: "user", Content: BuildDeduplicateIngredientsPrompt(string(groupsJSON), len(groups))},
 	}
 
 	resp, err := client.ChatJSON(ctx, messages, DedupSchema)
@@ -296,12 +301,14 @@ func (o *Orchestrator) DeduplicateIngredients(ctx context.Context, groups [][]mo
 		return nil, fmt.Errorf("failed to parse dedup response: %w\nraw: %s", err, content)
 	}
 	items := parsed.Items
+	// The caller replaces every grouped entry with the merged items, so a
+	// short reply would silently delete ingredients from the shopping list.
+	if len(items) != len(groups) {
+		return nil, fmt.Errorf("dedup returned %d items for %d groups", len(items), len(groups))
+	}
 
 	out := make([]models.AggregatedIngredient, 0, len(items))
 	for i, item := range items {
-		if i >= len(groups) {
-			break
-		}
 		recipeSet := map[string]bool{}
 		for _, ing := range groups[i] {
 			for _, r := range ing.Recipes {

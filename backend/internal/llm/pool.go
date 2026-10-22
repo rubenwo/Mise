@@ -16,7 +16,8 @@ type ProviderConfig struct {
 	Timeout      time.Duration
 	ProviderID   int
 	Tags         []string
-	NumCtx       int // Ollama num_ctx override; 0 = server default
+	NumCtx       int  // Ollama num_ctx override; 0 = server default
+	Think        bool // enable reasoning for tool-loop/chat calls
 }
 
 type ClientPool struct {
