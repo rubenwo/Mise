@@ -200,7 +200,7 @@ func (q *Queries) ReplacePlanRecipes(ctx context.Context, planID int, recipeIDs 
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	if _, err := tx.Exec(ctx, "DELETE FROM meal_plan_recipes WHERE meal_plan_id = $1", planID); err != nil {
 		return err

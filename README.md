@@ -42,6 +42,15 @@ cd backend && ./server.exe   # Windows
 cd backend && ./server       # Linux/macOS
 ```
 
+### Checks
+
+CI runs these on every push and pull request; the Docker image is only published when they pass.
+
+```bash
+cd backend && go vet ./... && go test ./...
+cd frontend && npm run lint && npm test && npm run build   # build includes the TypeScript check
+```
+
 ---
 
 ## Docker

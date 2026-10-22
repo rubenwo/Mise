@@ -78,7 +78,7 @@ func (q *Queries) ApprovePendingRecipe(ctx context.Context, pendingID int) (*mod
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	var r models.Recipe
 	var ingredientsJSON, instructionsJSON []byte

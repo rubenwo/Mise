@@ -113,7 +113,7 @@ func (h *InventoryHandler) Scan(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "image file required")
 			return
 		}
-		defer file.Close()
+		defer func() { _ = file.Close() }()
 
 		data, err := io.ReadAll(file)
 		if err != nil {

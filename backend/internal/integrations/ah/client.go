@@ -88,7 +88,7 @@ func (c *Client) getToken() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("AH auth request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		c.authErr = fmt.Errorf("AH auth failed with status %d", resp.StatusCode)
@@ -131,7 +131,7 @@ func (c *Client) SearchProduct(query string) (*Product, error) {
 	if err != nil {
 		return nil, fmt.Errorf("AH search request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// A 401 means our token expired; reset so the next call re-authenticates.
 	if resp.StatusCode == http.StatusUnauthorized {
