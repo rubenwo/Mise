@@ -80,6 +80,15 @@ export interface ChatMessage {
   created_at?: string;
 }
 
+export type RecommendationLane = 'similar' | 'explore';
+
+/** A recipe the user hasn't cooked, with why it was picked. */
+export interface RecommendedRecipe {
+  recipe: Recipe;
+  lane: RecommendationLane;
+  reason: string;
+}
+
 export interface RecommendResponse {
   message: string;
   recipes: Recipe[];

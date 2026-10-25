@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link, NavLink } from 'react-router-dom';
-import { BookOpen, CalendarDays, Inbox, Package, Plus, Settings, type LucideIcon } from 'lucide-react';
+import { BookOpen, CalendarDays, House, Inbox, Package, Plus, Settings, type LucideIcon } from 'lucide-react';
 
 interface LayoutProps {
   children: ReactNode;
@@ -14,6 +14,7 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
+  { to: '/', label: 'Home', icon: House },
   { to: '/plans', label: 'Plans', icon: CalendarDays },
   { to: '/library', label: 'Library', icon: BookOpen },
   { to: '/inventory', label: 'Pantry', icon: Package },
@@ -49,7 +50,7 @@ export default function Layout({ children, pendingCount = 0 }: LayoutProps) {
           <Logo />
           <div className="nav">
             {NAV_ITEMS.map(item => (
-              <NavLink key={item.to} to={item.to} className="nav-link">{item.label}</NavLink>
+              <NavLink key={item.to} to={item.to} end={item.to === '/'} className="nav-link">{item.label}</NavLink>
             ))}
           </div>
           <div className="nav-actions">
@@ -67,7 +68,7 @@ export default function Layout({ children, pendingCount = 0 }: LayoutProps) {
       <main className="main">{children}</main>
       <nav className="tabbar" aria-label="Main">
         {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
-          <NavLink key={to} to={to} className="tabbar-link">
+          <NavLink key={to} to={to} end={to === '/'} className="tabbar-link">
             <Icon size={22} strokeWidth={1.8} aria-hidden="true" />
             {label}
           </NavLink>

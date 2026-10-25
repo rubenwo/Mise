@@ -1,278 +1,197 @@
-import { useEffect, useState, type CSSProperties } from 'react';
-import RecipeCard from '../components/RecipeCard';
-import RecipeList from '../components/RecipeList';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { Search, Sparkles } from 'lucide-react';
 import DuplicatesModal from '../components/DuplicatesModal';
+import LibraryCard from '../components/LibraryCard';
 import LibraryRecommendChat from '../components/LibraryRecommendChat';
-import { findDuplicates, getRecipeSuggestions, getSettings, listCuisines, listRecipes, librarySearch, deleteRecipe } from '../api/client';
+import Menu from '../components/ui/Menu';
+import {
+  findDuplicates, getFavourites, getRecommendations, librarySearch, listCuisines, listRecipes, recordImpressions,
+} from '../api/client';
+import { useEatCounts } from '../hooks/useEatCounts';
 import { errorMessage, useFetch } from '../hooks/useFetch';
 import type { Recipe } from '../types';
 
-const CUISINE_COLORS = [
-  '#c2410c', '#0d9488', '#7c3aed', '#b45309',
-  '#0369a1', '#15803d', '#be123c', '#6d28d9',
-  '#0f766e', '#b45309',
+type View = 'new' | 'favourites' | 'all';
+
+const VIEWS: { id: View; label: string; summary: string }[] = [
+  { id: 'new', label: 'New to you', summary: 'Dishes you haven’t cooked, spread across flavour families' },
+  { id: 'favourites', label: 'Favourites', summary: 'Rated 7 or higher, best first' },
+  { id: 'all', label: 'Everything', summary: 'Every recipe, newest first' },
 ];
+const PAGE = 24;
 
-function cuisineColor(name: string): string {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
-  return CUISINE_COLORS[hash % CUISINE_COLORS.length];
+interface Item {
+  recipe: Recipe;
+  reason?: string;
 }
-
-interface CuisineGroupProps {
-  cuisine: string;
-  count: number;
-  previewImages: string[];
-  expanded: boolean;
-  onToggle: () => void;
-  onDelete: (id: number) => Promise<void>;
-}
-
-function CuisineGroup({ cuisine, count, previewImages, expanded, onToggle, onDelete }: CuisineGroupProps) {
-  // Load lazily on first expand, then keep the list when collapsed again.
-  const [everExpanded, setEverExpanded] = useState(expanded);
-  if (expanded && !everExpanded) setEverExpanded(true);
-
-  const { data: recipes, loading, setData } = useFetch(
-    everExpanded ? `cuisine:${cuisine}` : null,
-    async signal => {
-      const data = await listRecipes(1000, 0, cuisine === 'Other' ? '' : cuisine, signal);
-      const all = data.recipes ?? [];
-      // "Other" groups recipes with an empty cuisine_type.
-      return cuisine === 'Other' ? all.filter(r => !r.cuisine_type) : all;
-    },
-  );
-  const color = cuisineColor(cuisine);
-
-  const handleDelete = (id: number) => {
-    onDelete(id)
-      .then(() => setData(prev => prev?.filter(r => r.id !== id)))
-      .catch(() => {}); // already reported by onDelete
-  };
-
-  return (
-    <div className={`cuisine-group${expanded ? ' cuisine-group--expanded' : ''}`}>
-      <button className="cuisine-group-header" onClick={onToggle} style={{ '--cuisine-color': color } as CSSProperties}>
-        <div className="cuisine-group-info">
-          <span className="cuisine-group-name">{cuisine}</span>
-          <span className="cuisine-group-count">{count} recipe{count !== 1 ? 's' : ''}</span>
-        </div>
-        <div className="cuisine-group-right">
-          {!expanded && previewImages.length > 0 && (
-            <div className="cuisine-group-previews">
-              {previewImages.map((url, i) => (
-                <img key={i} className="cuisine-preview-img" src={url} alt="" />
-              ))}
-            </div>
-          )}
-          <span className="cuisine-group-arrow">{expanded ? '▲' : '▼'}</span>
-        </div>
-      </button>
-      {expanded && (
-        <div className="cuisine-group-body">
-          {loading && !recipes ? (
-            <p style={{ padding: '1rem' }}>Loading...</p>
-          ) : (
-            <div className="recipe-list">
-              {(recipes ?? []).map(recipe => (
-                <RecipeCard key={recipe.id} recipe={recipe} showLink onDelete={handleDelete} />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SuggestedCarousel({ count }: { count: number }) {
-  const { data: recipes } = useFetch(
-    count >= 1 ? `suggestions:${count}` : null,
-    signal => getRecipeSuggestions(count, signal),
-  );
-
-  if (!recipes || recipes.length === 0) return null;
-
-  return (
-    <div className="suggestions-carousel">
-      <div className="suggestions-carousel-header">
-        <h3>Today's picks</h3>
-        <span className="suggestions-carousel-hint">Refreshes daily · based on your library</span>
-      </div>
-      <div className="suggestions-carousel-track">
-        {recipes.map(recipe => (
-          <RecipeCard key={recipe.id} recipe={recipe} showLink />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-type SearchMode = 'fuzzy' | 'recommend';
-type DedupState = null | 'loading' | { groups: Recipe[][] };
 
 export default function LibraryPage() {
-  const cuisinesQuery = useFetch('cuisines', listCuisines);
-  const cuisines = cuisinesQuery.data ?? [];
-  const total = cuisines.reduce((sum, c) => sum + c.count, 0);
-  const reloadCuisines = cuisinesQuery.reload;
-
-  const settings = useFetch('settings', getSettings);
-  const suggestionSetting = settings.data?.find(s => s.key === 'suggestion_count')?.value;
-  const suggestionCount = (suggestionSetting && parseInt(suggestionSetting, 10)) || 3;
-
+  const [params, setParams] = useSearchParams();
+  const view = (params.get('view') as View) || 'new';
+  const cuisine = params.get('cuisine') ?? '';
+  const quick = params.get('quick') === '1';
+  const veg = params.get('veg') === '1';
   const [query, setQuery] = useState('');
-  const [debouncedQuery, setDebouncedQuery] = useState('');
-  const [searchMode, setSearchMode] = useState<SearchMode>('fuzzy');
-  const [expandedCuisines, setExpandedCuisines] = useState<Set<string>>(new Set());
-  const [dedupState, setDedupState] = useState<DedupState>(null);
+  const [debounced, setDebounced] = useState('');
+  const [pages, setPages] = useState(1);
+  const [asking, setAsking] = useState(false);
+  const [dedup, setDedup] = useState<null | 'loading' | Recipe[][]>(null);
+  const eatCounts = useEatCounts();
+  const cuisines = useFetch('cuisines', listCuisines);
+  const total = (cuisines.data ?? []).reduce((s, c) => s + c.count, 0);
 
-  // Debounce keyword search against the backend.
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedQuery(query.trim()), 300);
+    const timer = setTimeout(() => setDebounced(query.trim()), 300);
     return () => clearTimeout(timer);
   }, [query]);
 
-  const search = useFetch(
-    searchMode === 'fuzzy' && debouncedQuery ? `search:${debouncedQuery}` : null,
-    signal => librarySearch({ keywords: debouncedQuery, limit: 200 }, signal),
-  );
-
-  const handleModeChange = (mode: SearchMode) => {
-    setSearchMode(mode);
-    if (mode !== 'fuzzy') setQuery('');
-  };
-
-  const handleDeleteRecipe = async (id: number) => {
-    try {
-      await deleteRecipe(id);
-      reloadCuisines();
-      search.setData(prev => prev && { recipes: prev.recipes.filter(r => r.id !== id), total: prev.total - 1 });
-    } catch (err) {
-      alert('Failed to delete recipe: ' + errorMessage(err));
-      throw err;
-    }
-  };
-
-  const handleFindDuplicates = () => {
-    setDedupState('loading');
-    findDuplicates()
-      .then(data => setDedupState({ groups: data.groups ?? [] }))
-      .catch(err => { alert('Failed to find duplicates: ' + errorMessage(err)); setDedupState(null); });
-  };
-
-  const handleDedupDeleted = (ids: number[]) => {
-    reloadCuisines();
-    setDedupState(prev => {
-      if (!prev || prev === 'loading') return null;
-      const idSet = new Set(ids);
-      const groups = prev.groups
-        .map(g => g.filter(r => !idSet.has(r.id)))
-        .filter(g => g.length >= 2);
-      return { groups };
-    });
-  };
-
-  const toggleCuisine = (cuisine: string) => {
-    setExpandedCuisines(prev => {
-      const next = new Set(prev);
-      if (next.has(cuisine)) next.delete(cuisine);
-      else next.add(cuisine);
+  const setParam = (key: string, value: string) => {
+    setPages(1);
+    setParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (value) next.set(key, value); else next.delete(key);
       return next;
-    });
+    }, { replace: true });
   };
 
-  const isRecommend = searchMode === 'recommend';
-  const isSearching = !isRecommend && query.trim().length > 0;
-  // Results are pending until the debounce settles and the request returns.
-  const searchPending = isSearching && (query.trim() !== debouncedQuery || search.loading);
-  const displayCount = isSearching ? (search.data?.total ?? 0) : total;
-  const error = cuisinesQuery.error ?? (isSearching ? search.error : undefined);
+  const filters = { cuisine, max_minutes: quick ? 30 : 0, dietary: veg ? 'vegetarian' : '' };
+  const searching = debounced !== '';
+  const filtered = Boolean(cuisine || quick || veg);
+  const key = JSON.stringify({ view, filters, pages, debounced });
+
+  const results = useFetch<{ items: Item[]; more: boolean }>(`library:${key}`, async signal => {
+    if (searching || (view === 'all' && filtered)) {
+      const res = await librarySearch({
+        keywords: debounced,
+        cuisine_type: cuisine || undefined,
+        max_total_minutes: quick ? 30 : undefined,
+        dietary_restrictions: veg ? ['vegetarian'] : undefined,
+        limit: PAGE * pages,
+      }, signal);
+      return { items: res.recipes.map(recipe => ({ recipe })), more: res.recipes.length === PAGE * pages };
+    }
+    if (view === 'new') {
+      const picks = await getRecommendations({ ...filters, limit: Math.min(96, PAGE * pages) }, signal);
+      return { items: picks.map(p => ({ recipe: p.recipe, reason: p.reason })), more: picks.length === PAGE * pages && pages < 4 };
+    }
+    if (view === 'favourites') {
+      const favs = (await getFavourites(signal)).filter(r =>
+        (!cuisine || r.cuisine_type === cuisine) &&
+        (!quick || (r.prep_time_minutes + r.cook_time_minutes > 0 && r.prep_time_minutes + r.cook_time_minutes <= 30)) &&
+        (!veg || r.dietary_restrictions?.some(d => d.toLowerCase() === 'vegetarian')));
+      return { items: favs.map(recipe => ({ recipe })), more: false };
+    }
+    const res = await listRecipes(PAGE * pages, 0, cuisine, signal);
+    return { items: (res.recipes ?? []).map(recipe => ({ recipe })), more: (res.recipes ?? []).length < res.total };
+  });
+  const items = results.data?.items ?? [];
+
+  // Note the first screenful of discovery picks as seen, so ones you keep
+  // passing over fade out of future recommendations.
+  const firstPageIds = view === 'new' && !searching && pages === 1 ? items.slice(0, 12).map(i => i.recipe.id).join(',') : '';
+  useEffect(() => {
+    if (firstPageIds) recordImpressions(firstPageIds.split(',').map(Number)).catch(() => {});
+  }, [firstPageIds]);
+
+  const findDupes = () => {
+    setDedup('loading');
+    findDuplicates()
+      .then(data => setDedup(data.groups ?? []))
+      .catch(err => { alert('Failed to find duplicates: ' + errorMessage(err)); setDedup(null); });
+  };
+
+  const summary = searching
+    ? `${items.length}${results.data?.more ? '+' : ''} recipes match “${debounced}”`
+    : VIEWS.find(v => v.id === view)?.summary;
 
   return (
-    <div className="library-page">
-      <div className="library-page-header">
-        <h2>Recipe Library</h2>
-        <button
-          className="btn btn-secondary"
-          onClick={handleFindDuplicates}
-          disabled={dedupState === 'loading' || total === 0}
-        >
-          {dedupState === 'loading' ? 'Scanning…' : 'Find Duplicates'}
-        </button>
+    <div className="library-page lib">
+      <div className="page-header">
+        <h1>Library</h1>
+        <div className="lib-header-side">
+          {total > 0 && <span className="lib-total">{total} recipes</span>}
+          <Menu label="Library actions" items={[
+            { label: dedup === 'loading' ? 'Scanning for duplicates…' : 'Find duplicates', onSelect: findDupes },
+          ]} />
+        </div>
       </div>
-      {dedupState && dedupState !== 'loading' && (
+      {Array.isArray(dedup) && (
         <DuplicatesModal
-          groups={dedupState.groups}
-          onClose={() => setDedupState(null)}
-          onDeleted={handleDedupDeleted}
+          groups={dedup}
+          onClose={() => setDedup(null)}
+          onDeleted={ids => {
+            const gone = new Set(ids);
+            setDedup(prev => Array.isArray(prev) ? prev.map(g => g.filter(r => !gone.has(r.id))).filter(g => g.length >= 2) : null);
+            cuisines.reload();
+            results.reload();
+          }}
         />
       )}
-      <div className="mode-toggle">
-        <button
-          className={searchMode === 'fuzzy' ? 'active' : ''}
-          onClick={() => handleModeChange('fuzzy')}
-        >
-          Keyword
-        </button>
-        <button
-          className={searchMode === 'recommend' ? 'active' : ''}
-          onClick={() => handleModeChange('recommend')}
-        >
-          Recommend
+
+      <div className="lib-search">
+        <label className="lib-search-box">
+          <Search size={18} aria-hidden="true" />
+          <span className="visually-hidden">Search recipes</span>
+          <input type="search" placeholder="Search by dish or ingredient" value={query} onChange={e => { setQuery(e.target.value); setPages(1); }} />
+        </label>
+        <button type="button" className="btn btn-secondary lib-ask" aria-pressed={asking} onClick={() => setAsking(a => !a)}>
+          <Sparkles size={17} aria-hidden="true" />Ask for ideas
         </button>
       </div>
-      {!isRecommend && (
-        <div className="search-bar">
-          <input
-            type="text"
-            placeholder="Search recipes..."
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-          />
-        </div>
-      )}
-      {total > 0 && !isRecommend && (
-        <p className="total-count">
-          {isSearching
-            ? `${displayCount} of ${total}`
-            : total} recipe{displayCount !== 1 ? 's' : ''}
-          {searchPending && ' · searching...'}
-        </p>
-      )}
-      {error && <div className="error-message">{error}</div>}
-      {!isSearching && !isRecommend && !cuisinesQuery.loading && total >= suggestionCount && (
-        <SuggestedCarousel count={suggestionCount} />
-      )}
-      {isRecommend ? (
-        <LibraryRecommendChat
-          limit={suggestionCount}
-          onDeleteRecipe={id => { handleDeleteRecipe(id).catch(() => {}); }}
-        />
-      ) : cuisinesQuery.loading && !cuisinesQuery.data ? (
-        <p>Loading...</p>
-      ) : isSearching ? (
-        searchPending ? null : (
-          <RecipeList
-            recipes={search.data?.recipes ?? []}
-            onDelete={id => { handleDeleteRecipe(id).catch(() => {}); }}
-            searchQuery={query}
-          />
-        )
+
+      {asking ? (
+        <LibraryRecommendChat limit={6} onDeleteRecipe={() => results.reload()} />
       ) : (
-        <div className="cuisine-groups">
-          {cuisines.map(c => (
-            <CuisineGroup
-              key={c.cuisine_type}
-              cuisine={c.cuisine_type}
-              count={c.count}
-              previewImages={c.preview_images ?? []}
-              expanded={expandedCuisines.has(c.cuisine_type)}
-              onToggle={() => toggleCuisine(c.cuisine_type)}
-              onDelete={handleDeleteRecipe}
-            />
-          ))}
-        </div>
+        <>
+          <div className="lib-filters" role="group" aria-label="Filters">
+            {!searching && VIEWS.map(v => (
+              <button key={v.id} type="button" className="filter-chip" aria-pressed={view === v.id}
+                onClick={() => setParam('view', v.id === 'new' ? '' : v.id)}>
+                {v.label}
+              </button>
+            ))}
+            {!searching && <span className="lib-filters-divider" aria-hidden="true" />}
+            <button type="button" className="filter-chip" aria-pressed={quick} onClick={() => setParam('quick', quick ? '' : '1')}>Under 30 min</button>
+            <button type="button" className="filter-chip" aria-pressed={veg} onClick={() => setParam('veg', veg ? '' : '1')}>Vegetarian</button>
+            <label className="visually-hidden" htmlFor="lib-cuisine">Cuisine</label>
+            <select id="lib-cuisine" className="filter-select" value={cuisine} onChange={e => setParam('cuisine', e.target.value)}>
+              <option value="">All cuisines</option>
+              {(cuisines.data ?? []).map(c => (
+                <option key={c.cuisine_type} value={c.cuisine_type}>{c.cuisine_type} ({c.count})</option>
+              ))}
+            </select>
+          </div>
+
+          {summary && <p className="lib-summary">{summary}</p>}
+          {results.error && <div className="error-message">{results.error}</div>}
+
+          {results.loading && !results.data ? (
+            <p className="empty-state">Loading…</p>
+          ) : items.length === 0 ? (
+            <p className="empty-state">
+              {view === 'favourites' && !searching ? 'Nothing rated 7 or higher matches yet.' : 'No recipes match.'}
+            </p>
+          ) : (
+            <div className="lib-grid">
+              {items.map(({ recipe, reason }) => (
+                <LibraryCard
+                  key={recipe.id}
+                  recipe={recipe}
+                  reason={reason}
+                  stats={eatCounts[recipe.id]}
+                  detail={view === 'favourites' && !searching ? 'rating' : 'description'}
+                />
+              ))}
+            </div>
+          )}
+
+          {results.data?.more && (
+            <button type="button" className="btn btn-secondary lib-more" disabled={results.loading} onClick={() => setPages(p => p + 1)}>
+              {results.loading ? 'Loading…' : 'Show more'}
+            </button>
+          )}
+        </>
       )}
     </div>
   );

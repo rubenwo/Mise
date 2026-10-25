@@ -3,6 +3,7 @@ package handlers
 import (
 	"errors"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -29,17 +30,22 @@ type RecommendedRecipe struct {
 }
 
 // List returns recipes the user hasn't cooked yet, stable for the day.
-// Query: limit (default 12, max 48), exclude (comma-separated recipe IDs),
-// offset (skips that many picks, for "show me other ideas").
+// Query: limit (default 12, max 96), offset (skips that many picks, for
+// "show me other ideas"), exclude (comma-separated recipe IDs), and the
+// library filters cuisine, max_minutes and dietary.
 func (h *RecommendationHandler) List(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	limit := clampInt(q.Get("limit"), 12, 1, 48)
+	limit := clampInt(q.Get("limit"), 12, 1, 96)
 	offset := clampInt(q.Get("offset"), 0, 0, 200)
 	exclude := map[int]bool{}
 	for part := range strings.SplitSeq(q.Get("exclude"), ",") {
 		if id, err := strconv.Atoi(strings.TrimSpace(part)); err == nil {
 			exclude[id] = true
 		}
+	}
+	if err := h.excludeFiltered(r, exclude); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to apply filters")
+		return
 	}
 
 	picks, err := h.service.Recommend(r.Context(), recommend.Options{
@@ -64,6 +70,60 @@ func (h *RecommendationHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, recipes)
+}
+
+// excludeFiltered adds every recipe that fails the request's cuisine,
+// max_minutes or dietary filter to exclude.
+func (h *RecommendationHandler) excludeFiltered(r *http.Request, exclude map[int]bool) error {
+	q := r.URL.Query()
+	cuisine := q.Get("cuisine")
+	maxMinutes := clampInt(q.Get("max_minutes"), 0, 0, 1000)
+	dietary := q.Get("dietary")
+	if cuisine == "" && maxMinutes == 0 && dietary == "" {
+		return nil
+	}
+	meta, err := h.queries.ListRecipeFilterMeta(r.Context())
+	if err != nil {
+		return err
+	}
+	for _, m := range meta {
+		if cuisine != "" && !strings.EqualFold(m.Cuisine, cuisine) ||
+			maxMinutes > 0 && (m.Minutes == 0 || m.Minutes > maxMinutes) ||
+			dietary != "" && !slices.ContainsFunc(m.Dietary, func(d string) bool { return strings.EqualFold(d, dietary) }) {
+			exclude[m.ID] = true
+		}
+	}
+	return nil
+}
+
+// Favourites returns recipes rated at least min_rating (default 7, the
+// user's "good food" threshold), best first.
+func (h *RecommendationHandler) Favourites(w http.ResponseWriter, r *http.Request) {
+	minRating, err := strconv.ParseFloat(r.URL.Query().Get("min_rating"), 64)
+	if err != nil {
+		minRating = 7
+	}
+	ids, err := h.queries.ListFavouriteRecipeIDs(r.Context(), minRating)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list favourites")
+		return
+	}
+	recipes, err := h.queries.GetRecipesByIDs(r.Context(), ids)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load favourites")
+		return
+	}
+	byID := make(map[int]models.Recipe, len(recipes))
+	for _, rec := range recipes {
+		byID[rec.ID] = rec
+	}
+	out := make([]models.Recipe, 0, len(ids))
+	for _, id := range ids {
+		if rec, ok := byID[id]; ok {
+			out = append(out, rec)
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (h *RecommendationHandler) recipesFor(r *http.Request, picks []recommend.Pick) ([]RecommendedRecipe, error) {

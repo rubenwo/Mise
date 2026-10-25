@@ -11,6 +11,7 @@ import type {
   MealPlan,
   PendingIngredientScan,
   PlanSuggestions,
+  RecommendedRecipe,
   Provider,
   ProviderInput,
   ProviderType,
@@ -84,10 +85,6 @@ export function updateRecipeContent(id: number, ingredients: Recipe['ingredients
     method: 'PATCH',
     body: { ingredients, instructions, cuisine_type: cuisineType },
   });
-}
-
-export function getRecipeSuggestions(count = 3, signal?: AbortSignal) {
-  return request<Recipe[]>(`/recipes/suggestions?count=${count}`, { signal });
 }
 
 export function recommendRecipes(messages: ChatMessage[], limit?: number) {
@@ -190,6 +187,30 @@ export function getGroceryChecks(planId: number, signal?: AbortSignal) {
 
 export function setGroceryCheck(planId: number, name: string, checked: boolean) {
   return request<void>(`/plans/${planId}/grocery-checks`, { method: 'PUT', body: { name, checked } });
+}
+
+// ── Recommendations ───────────────────────────────────
+export interface RecommendationFilters {
+  cuisine?: string;
+  max_minutes?: number;
+  dietary?: string;
+}
+
+export function getRecommendations(
+  { limit = 12, offset = 0, ...filters }: RecommendationFilters & { limit?: number; offset?: number },
+  signal?: AbortSignal,
+) {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  for (const [k, v] of Object.entries(filters)) if (v) params.set(k, String(v));
+  return request<RecommendedRecipe[]>(`/recommendations?${params}`, { signal });
+}
+
+export function recordImpressions(recipeIds: number[]) {
+  return request<void>('/recommendations/impressions', { method: 'POST', body: { recipe_ids: recipeIds } });
+}
+
+export function getFavourites(signal?: AbortSignal) {
+  return request<Recipe[]>('/recipes/favourites', { signal });
 }
 
 // ── Settings ──────────────────────────────────────────

@@ -137,3 +137,56 @@ func (q *Queries) RecordImpressions(ctx context.Context, recipeIDs []int) error 
 		ON CONFLICT DO NOTHING`, recipeIDs)
 	return err
 }
+
+// RecipeFilterMeta is what library filters need to know about a recipe.
+type RecipeFilterMeta struct {
+	ID      int
+	Cuisine string
+	Minutes int
+	Dietary []string
+}
+
+// ListRecipeFilterMeta returns cuisine, total time and dietary labels for
+// every recipe, for filtering recommendations without loading full recipes.
+func (q *Queries) ListRecipeFilterMeta(ctx context.Context) ([]RecipeFilterMeta, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT id, cuisine_type, prep_time_minutes + cook_time_minutes, dietary_restrictions
+		FROM recipes`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []RecipeFilterMeta
+	for rows.Next() {
+		var m RecipeFilterMeta
+		if err := rows.Scan(&m.ID, &m.Cuisine, &m.Minutes, &m.Dietary); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// ListFavouriteRecipeIDs returns recipes whose average rating is at least
+// minRating, best first (ties broken by how often they were cooked).
+func (q *Queries) ListFavouriteRecipeIDs(ctx context.Context, minRating float64) ([]int, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT recipe_id FROM meal_plan_recipes
+		WHERE completed = TRUE AND rating IS NOT NULL
+		GROUP BY recipe_id
+		HAVING AVG(rating) >= $1
+		ORDER BY AVG(rating) DESC, COUNT(*) DESC, recipe_id`, minRating)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}

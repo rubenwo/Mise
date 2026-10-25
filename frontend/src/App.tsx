@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import AddRecipePage from './pages/AddRecipePage';
+import HomePage from './pages/HomePage';
 import InventoryPage from './pages/InventoryPage';
 import LibraryPage from './pages/LibraryPage';
 import PlanPage from './pages/plans';
@@ -25,7 +26,7 @@ export default function App() {
     <BrowserRouter>
       <Layout pendingCount={pendingCount}>
         <Routes>
-          <Route path="/" element={<PendingPage onCountChange={setPendingCount} />} />
+          <Route path="/" element={<HomePage />} />
           <Route path="/pending" element={<PendingPage onCountChange={setPendingCount} />} />
           <Route path="/generate" element={<Navigate to="/recipe/new?mode=generate" replace />} />
           <Route path="/import" element={<Navigate to="/recipe/new?mode=import" replace />} />

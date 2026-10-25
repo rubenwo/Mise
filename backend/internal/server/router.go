@@ -35,6 +35,7 @@ func NewRouter(h *handlers.RecipeHandler, g *handlers.GenerateHandler, mp *handl
 		r.Get("/recipes/eat-counts", h.EatCounts)
 		r.Get("/recommendations", rec.List)
 		r.Post("/recommendations/impressions", rec.Impressions)
+		r.Get("/recipes/favourites", rec.Favourites)
 
 		r.Get("/recipes/{id}", h.Get)
 		r.Patch("/recipes/{id}", h.Update)
