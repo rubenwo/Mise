@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -22,26 +23,91 @@ var KnownCuisines = []string{
 	"Scandinavian", "Spanish", "Thai", "Turkish", "Vietnamese",
 }
 
-// cuisineAliases maps non-canonical cuisine names to their canonical form.
-// All Malay, Nyonya, and Peranakan variants are unified under "Malaysian".
+// cuisineAliases maps non-canonical cuisine names (lowercase) to their
+// canonical form. Keys are matched after the qualifier stripping in
+// NormalizeCuisine, so "Malaysian Peranakan (Nyonya)" only needs
+// "malaysian peranakan".
 var cuisineAliases = map[string]string{
-	"malay":            "Malaysian",
-	"malaysian":        "Malaysian",
-	"nyonya":           "Malaysian",
-	"nonya":            "Malaysian",
-	"peranakan":        "Malaysian",
-	"nyonya peranakan": "Malaysian",
-	"nonya peranakan":  "Malaysian",
-	"malay/nyonya":     "Malaysian",
+	// All Malay, Nyonya and Peranakan variants are "Malaysian".
+	"malay":               "Malaysian",
+	"malaysian":           "Malaysian",
+	"nyonya":              "Malaysian",
+	"nonya":               "Malaysian",
+	"peranakan":           "Malaysian",
+	"nyonya peranakan":    "Malaysian",
+	"nonya peranakan":     "Malaysian",
+	"malay/nyonya":        "Malaysian",
+	"nyonya/malay":        "Malaysian",
+	"malay-nyonya":        "Malaysian",
+	"malaysian nyonya":    "Malaysian",
+	"malaysian/nyonya":    "Malaysian",
+	"malaysian peranakan": "Malaysian",
+
+	// Generic pan-Asian dishes.
+	"asian":              "Asian Fusion",
+	"asian fusion":       "Asian Fusion",
+	"asian-fusion":       "Asian Fusion",
+	"pan-asian":          "Asian Fusion",
+	"korean-thai fusion": "Asian Fusion",
+
+	// Named fusions that have a better home.
+	"japanese-peruvian":             "Nikkei",
+	"japanese-peruvian fusion":      "Nikkei",
+	"nikkei":                        "Nikkei",
+	"thai-chinese fusion":           "Thai",
+	"greek mediterranean":           "Greek",
+	"italian-mediterranean fusion":  "Italian",
+	"british-south american fusion": "Fusion",
+	"sichuan":                       "Szechuan",
 }
 
-// NormalizeCuisine maps cuisine aliases to their canonical name.
-// Returns the input unchanged if no alias is found.
+var (
+	// cuisineParenthetical matches a trailing note like " (Nyonya)".
+	cuisineParenthetical = regexp.MustCompile(`\s*\(.*\)$`)
+	// cuisineQualifier matches suffixes models add to a cuisine name, e.g.
+	// "Thai-inspired", "Korean style", "Vietnamese-Asian Fusion".
+	cuisineQualifier = regexp.MustCompile(`[-\s]+(inspired|style|asian fusion|asian)$`)
+)
+
+// NormalizeCuisine maps a model-produced cuisine label to its canonical name:
+// known aliases first, then the same after stripping qualifiers such as
+// "-inspired" or "(Nyonya)", then a case-insensitive match against
+// KnownCuisines. An unknown cuisine keeps its own name, minus any qualifier
+// ("Laotian-inspired" -> "Laotian").
 func NormalizeCuisine(cuisine string) string {
-	if canonical, ok := cuisineAliases[strings.ToLower(strings.TrimSpace(cuisine))]; ok {
-		return canonical
+	trimmed := strings.TrimSpace(cuisine)
+	key := strings.ToLower(trimmed)
+	stripped := false
+	for {
+		if canonical, ok := cuisineAliases[key]; ok {
+			return canonical
+		}
+		for _, known := range KnownCuisines {
+			if strings.EqualFold(key, known) {
+				return known
+			}
+		}
+		next := cuisineQualifier.ReplaceAllString(cuisineParenthetical.ReplaceAllString(key, ""), "")
+		if next == key || next == "" {
+			if stripped {
+				return titleCase(key)
+			}
+			return trimmed
+		}
+		key, stripped = next, true
 	}
-	return cuisine
+}
+
+// titleCase capitalises each word, treating hyphens and slashes as word
+// breaks: "dutch-indonesian" -> "Dutch-Indonesian".
+func titleCase(s string) string {
+	b := []byte(s)
+	for i := range b {
+		if (i == 0 || strings.ContainsRune(" -/", rune(b[i-1]))) && b[i] >= 'a' && b[i] <= 'z' {
+			b[i] -= 'a' - 'A'
+		}
+	}
+	return string(b)
 }
 
 // AllCuisines returns a sorted, deduplicated list of every cuisine the app

@@ -19,10 +19,32 @@ func TestPickLeastRepresentedCuisine(t *testing.T) {
 }
 
 func TestNormalizeCuisine(t *testing.T) {
-	if got := NormalizeCuisine("Nyonya"); got != "Malaysian" {
-		t.Errorf("NormalizeCuisine(Nyonya) = %q, want Malaysian", got)
+	tests := []struct{ in, want string }{
+		{"Nyonya", "Malaysian"},
+		{"Malaysian Peranakan (Nyonya)", "Malaysian"},
+		{"Nyonya/Malay", "Malaysian"},
+		{"Malaysian-Asian", "Malaysian"},
+		{"Thai-inspired", "Thai"},
+		{"Thai-Inspired", "Thai"},
+		{"Thai-Asian Fusion", "Thai"},
+		{"Vietnamese-Inspired Asian Fusion", "Vietnamese"},
+		{"korean style", "Korean"},
+		{"japanese", "Japanese"},
+		{"Asian-inspired", "Asian Fusion"},
+		{"Asian", "Asian Fusion"},
+		{"Japanese-Peruvian Fusion", "Nikkei"},
+		{"Szechuan-inspired", "Szechuan"},
+		{"Sichuan", "Szechuan"},
+		{"Greek Mediterranean", "Greek"},
+		{"  Dutch-Indonesian ", "Dutch-Indonesian"},
+		{"Italian-American", "Italian-American"},
+		{"Laotian-inspired", "Laotian"},
+		{"Klingon", "Klingon"},
+		{"", ""},
 	}
-	if got := NormalizeCuisine("Klingon"); got != "Klingon" {
-		t.Errorf("unknown cuisine should pass through, got %q", got)
+	for _, tt := range tests {
+		if got := NormalizeCuisine(tt.in); got != tt.want {
+			t.Errorf("NormalizeCuisine(%q) = %q, want %q", tt.in, got, tt.want)
+		}
 	}
 }
