@@ -18,6 +18,7 @@ import (
 	"github.com/rubenwo/mise/internal/handlers"
 	"github.com/rubenwo/mise/internal/llm"
 	"github.com/rubenwo/mise/internal/models"
+	"github.com/rubenwo/mise/internal/recommend"
 	"github.com/rubenwo/mise/internal/server"
 	"github.com/rubenwo/mise/internal/tools"
 	"github.com/rubenwo/mise/internal/translation"
@@ -128,7 +129,13 @@ func main() {
 	imageSearcher := tools.NewImageSearcher(cfg.Search.Timeout, cfg.Server.ImagesDir)
 	recipeHandler := handlers.NewRecipeHandler(queries, imageSearcher, clientPool)
 	generateHandler := handlers.NewGenerateHandler(orchestrator, queries)
-	mealPlanHandler := handlers.NewMealPlanHandler(queries, orchestrator, cfg.Search.Timeout, translator)
+	// Recommendations: embeds recipes via an "embedding"-tagged provider and
+	// clusters the library into flavour families for "New to you" picks.
+	recommender := recommend.NewService(queries, clientPool)
+	recommender.Start(ctx)
+	recommendationHandler := handlers.NewRecommendationHandler(queries, recommender)
+
+	mealPlanHandler := handlers.NewMealPlanHandler(queries, orchestrator, cfg.Search.Timeout, translator, recommender)
 	settingsHandler := handlers.NewSettingsHandler(queries, clientPool, genTimeout, cfg.Ollama.NumCtx, cfg.Ollama.Think)
 	pendingHandler := handlers.NewPendingHandler(queries, imageSearcher, hub)
 
@@ -144,7 +151,7 @@ func main() {
 
 	inventoryHandler := handlers.NewInventoryHandler(queries, orchestrator)
 
-	router := server.NewRouter(recipeHandler, generateHandler, mealPlanHandler, settingsHandler, pendingHandler, chatHandler, bgTranslator, inventoryHandler, cfg.Server.CORSOrigin, cfg.Server.ImagesDir)
+	router := server.NewRouter(recipeHandler, generateHandler, mealPlanHandler, settingsHandler, pendingHandler, chatHandler, bgTranslator, inventoryHandler, recommendationHandler, cfg.Server.CORSOrigin, cfg.Server.ImagesDir)
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.Server.Port),

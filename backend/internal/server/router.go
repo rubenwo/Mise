@@ -9,7 +9,7 @@ import (
 	"github.com/rubenwo/mise/internal/handlers"
 )
 
-func NewRouter(h *handlers.RecipeHandler, g *handlers.GenerateHandler, mp *handlers.MealPlanHandler, s *handlers.SettingsHandler, p *handlers.PendingHandler, ch *handlers.ChatHandler, bt *handlers.BackgroundTranslator, inv *handlers.InventoryHandler, corsOrigin, imagesDir string) *chi.Mux {
+func NewRouter(h *handlers.RecipeHandler, g *handlers.GenerateHandler, mp *handlers.MealPlanHandler, s *handlers.SettingsHandler, p *handlers.PendingHandler, ch *handlers.ChatHandler, bt *handlers.BackgroundTranslator, inv *handlers.InventoryHandler, rec *handlers.RecommendationHandler, corsOrigin, imagesDir string) *chi.Mux {
 	r := chi.NewRouter()
 
 	r.Use(LoggingMiddleware)
@@ -33,6 +33,9 @@ func NewRouter(h *handlers.RecipeHandler, g *handlers.GenerateHandler, mp *handl
 		r.Get("/recipes/suggestions", h.Suggestions)
 		r.Get("/recipes/duplicates", h.FindDuplicates)
 		r.Get("/recipes/eat-counts", h.EatCounts)
+		r.Get("/recommendations", rec.List)
+		r.Post("/recommendations/impressions", rec.Impressions)
+
 		r.Get("/recipes/{id}", h.Get)
 		r.Patch("/recipes/{id}", h.Update)
 		r.Delete("/recipes/{id}", h.Delete)

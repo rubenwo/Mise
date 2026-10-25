@@ -357,3 +357,15 @@ func TestE2ETranslate(t *testing.T) {
 	score("new", newPrompt)
 	score("ctx", ctxPrompt)
 }
+
+func TestE2EEmbed(t *testing.T) {
+	c := e2eClient(t, e2eEnv("MISE_E2E_EMBED_MODEL", "embeddinggemma"))
+	vecs, err := c.Embed(context.Background(), []string{"Chicken laksa with rice noodles", "Beef stew with potatoes"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(vecs) != 2 || len(vecs[0]) == 0 || len(vecs[0]) != len(vecs[1]) {
+		t.Fatalf("got %d vectors of lengths %d/%d", len(vecs), len(vecs[0]), len(vecs[len(vecs)-1]))
+	}
+	t.Logf("%d-dimensional embeddings", len(vecs[0]))
+}

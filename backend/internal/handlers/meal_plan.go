@@ -16,6 +16,7 @@ import (
 	"github.com/rubenwo/mise/internal/integrations/ah"
 	"github.com/rubenwo/mise/internal/llm"
 	"github.com/rubenwo/mise/internal/models"
+	"github.com/rubenwo/mise/internal/recommend"
 	"github.com/rubenwo/mise/internal/translation"
 )
 
@@ -24,10 +25,11 @@ type MealPlanHandler struct {
 	orchestrator *llm.Orchestrator
 	ahClient     *ah.Client
 	translator   *translation.Translator
+	recommender  *recommend.Service
 }
 
-func NewMealPlanHandler(q *database.Queries, o *llm.Orchestrator, searchTimeout time.Duration, t *translation.Translator) *MealPlanHandler {
-	return &MealPlanHandler{queries: q, orchestrator: o, ahClient: ah.NewClient(searchTimeout), translator: t}
+func NewMealPlanHandler(q *database.Queries, o *llm.Orchestrator, searchTimeout time.Duration, t *translation.Translator, rec *recommend.Service) *MealPlanHandler {
+	return &MealPlanHandler{queries: q, orchestrator: o, ahClient: ah.NewClient(searchTimeout), translator: t, recommender: rec}
 }
 
 func (h *MealPlanHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -548,21 +550,33 @@ func (h *MealPlanHandler) Randomize(w http.ResponseWriter, r *http.Request) {
 		return w
 	}
 
-	selected := weightedSample(pool, needed, weightFor)
-	if stillNeeded := needed - len(selected); stillNeeded > 0 {
-		selected = append(selected, weightedSample(fallback, stillNeeded, weightFor)...)
+	var selectedIDs []int
+	if h.recommender != nil {
+		ids, err := h.suggestDinners(r.Context(), pool, needed, weightFor, statsByID, existingIDs, excludedIDs, now)
+		if err != nil {
+			log.Printf("Recommender unavailable for plan %d, using weighted random picks: %v", planID, err)
+		} else if len(ids) == needed {
+			selectedIDs = ids
+		}
+	}
+	if selectedIDs == nil {
+		selected := weightedSample(pool, needed, weightFor)
+		if stillNeeded := needed - len(selected); stillNeeded > 0 {
+			selected = append(selected, weightedSample(fallback, stillNeeded, weightFor)...)
+		}
+		for _, s := range diversifyCuisines(selected, pool, weightFor) {
+			selectedIDs = append(selectedIDs, s.ID)
+		}
 	}
 
-	selected = diversifyCuisines(selected, pool, weightFor)
-
 	defaultServings := req.Servings[len(req.Servings)-1]
-	for i, s := range selected {
+	for i, id := range selectedIDs {
 		servings := defaultServings
 		idx := existingCount + i
 		if idx < len(req.Servings) {
 			servings = req.Servings[idx]
 		}
-		if err := h.queries.AddRecipeToPlan(r.Context(), planID, s.ID, servings); err != nil {
+		if err := h.queries.AddRecipeToPlan(r.Context(), planID, id, servings); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to add recipe to plan")
 			return
 		}
@@ -638,4 +652,48 @@ func (h *MealPlanHandler) UpdateRecipe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, plan)
+}
+
+// suggestDinners fills a plan from two sources: about a third proven
+// favourites (rated 7+ and not cooked in the last three weeks, weighted as
+// before), the rest new-to-you dishes from the recommender so a plan
+// explores flavour families instead of drawing at random.
+func (h *MealPlanHandler) suggestDinners(ctx context.Context, pool []database.RecipeSummary, needed int,
+	weightFor func(database.RecipeSummary) float64, stats map[int]models.RecipeEatStats,
+	existing, excluded map[int]bool, now time.Time) ([]int, error) {
+	var favPool []database.RecipeSummary
+	for _, s := range pool {
+		st, ok := stats[s.ID]
+		if ok && st.Count > 0 && st.AvgRating != nil && *st.AvgRating >= 7 &&
+			(st.LastCookedAt == nil || now.Sub(*st.LastCookedAt) > 21*24*time.Hour) {
+			favPool = append(favPool, s)
+		}
+	}
+	favs := weightedSample(favPool, needed/3, weightFor)
+
+	exclude := make(map[int]bool, len(existing)+len(excluded)+len(favs))
+	for id := range existing {
+		exclude[id] = true
+	}
+	for id := range excluded {
+		exclude[id] = true
+	}
+	ids := make([]int, 0, needed)
+	for _, f := range favs {
+		exclude[f.ID] = true
+		ids = append(ids, f.ID)
+	}
+	picks, err := h.recommender.Recommend(ctx, recommend.Options{
+		Limit:        needed - len(favs),
+		Seed:         uint64(now.UnixNano()), // a fresh draw on every click
+		Exclude:      exclude,
+		SimilarShare: 0.25,
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range picks {
+		ids = append(ids, p.RecipeID)
+	}
+	return ids, nil
 }

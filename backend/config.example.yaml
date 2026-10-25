@@ -24,6 +24,9 @@ database:
 #   translation          — ingredient translation (e.g. for Albert Heijn ordering)
 #   inventory            — identify products from photos (needs a vision model)
 #   deduplication        — merge shopping-list items the deterministic pass can't
+#   embedding            — recipe embeddings for "New to you" recommendations
+#                          (an embedding model, e.g. embeddinggemma; optional —
+#                          without it recommendations use ingredients only)
 #
 # A single provider can carry multiple tags.
 # Recommended setup (~32 GB VRAM): one gemma4:26b provider with every tag.
@@ -34,6 +37,7 @@ database:
 #
 #   Provider 1  model: gemma4:26b  tags: generation, background-generation, chat, search,
 #                                        translation, inventory, deduplication
+#   Provider 2  model: embeddinggemma  tags: embedding   (~600 MB)
 #
 ollama:
   host: "http://localhost:11434"

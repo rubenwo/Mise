@@ -117,7 +117,8 @@ export default function PlanDetail({ planId }: { planId: number }) {
         <section className="plan-panel" aria-labelledby="randomize-title">
           <h2 id="randomize-title">Fill with suggestions</h2>
           <p className="plan-panel-hint">
-            Picks dinners from your library for the empty slots. Dinners already in the plan stay.
+            Fills the empty slots with about a third favourites you haven&apos;t had in a few weeks and the rest
+            new-to-you dishes, spread across flavour families. Dinners already in the plan stay.
           </p>
           <div className="randomize-slots">
             {randomDays.map((n, i) => (
