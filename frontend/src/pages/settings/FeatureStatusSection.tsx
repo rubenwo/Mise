@@ -46,6 +46,11 @@ const FEATURE_DEFS: FeatureDef[] = [
     label: 'Shopping list deduplication',
     detail: 'LLM-based ingredient deduplication for shopping lists',
   },
+  {
+    tag: 'embedding',
+    label: 'Recommendations',
+    detail: 'Flavour-aware "New to you" picks (optional embedding model; without it picks use ingredients only)',
+  },
 ];
 
 export default function FeatureStatusSection() {

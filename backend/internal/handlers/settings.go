@@ -109,7 +109,7 @@ func (h *SettingsHandler) DeleteProvider(w http.ResponseWriter, r *http.Request)
 // GetFeatureStatus returns the availability of each AI feature tag.
 // Status values: "available", "offline", "unconfigured".
 func (h *SettingsHandler) GetFeatureStatus(w http.ResponseWriter, r *http.Request) {
-	tags := []string{"generation", "background-generation", "chat", "search", "translation", "inventory", "deduplication"}
+	tags := []string{"generation", "background-generation", "chat", "search", "translation", "inventory", "deduplication", "embedding"}
 	status := make(map[string]string, len(tags))
 	for _, tag := range tags {
 		status[tag] = h.pool.FeatureStatus(tag)

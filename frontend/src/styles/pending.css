@@ -1,6 +1,6 @@
 /* ── Pending page (inbox) ───────────────────────────────────────────────── */
 .pending-page { max-width: 880px; margin: 0 auto; }
-.pending-page h2 { margin-bottom: 6px; }
+.pending-page h1 { font-size: 40px; line-height: 1.1; margin-bottom: 6px; }
 .pending-page-hint { color: var(--text-secondary); font-size: 13.5px; margin-bottom: 24px; line-height: 1.5; max-width: 60ch; }
 .pending-generating-banner {
   display: flex;

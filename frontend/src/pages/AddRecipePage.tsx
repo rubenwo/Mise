@@ -319,6 +319,9 @@ export default function AddRecipePage() {
 
   return (
     <div className="generate-page">
+      <div className="page-header">
+        <h1>New recipe</h1>
+      </div>
       <div className="add-recipe-tabs">
         {TABS.map(t => (
           <button key={t} type="button"

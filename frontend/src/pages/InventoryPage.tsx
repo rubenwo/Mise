@@ -257,9 +257,12 @@ export default function InventoryPage() {
 
   return (
     <div className="inventory-page">
+      <div className="page-header">
+        <h1>Pantry</h1>
+      </div>
       <div className="inventory-add-card">
         <div className="inventory-add-header">
-          <h3>Add Ingredient</h3>
+          <h3>Add to your pantry</h3>
           <div className="mode-toggle">
             <button type="button" className={mode === 'manual' ? 'active' : ''} onClick={() => setMode('manual')}>Manual</button>
             <button type="button" className={mode === 'scan' ? 'active' : ''} onClick={() => setMode('scan')}>Scan Photo</button>
@@ -307,7 +310,7 @@ export default function InventoryPage() {
       )}
 
       <div className="inventory-list-section">
-        <h3>Your Inventory {!loadingInventory && <span className="inventory-count">({items.length})</span>}</h3>
+        <h3>In your pantry {!loadingInventory && <span className="inventory-count">({items.length})</span>}</h3>
         {loadingInventory ? (
           <p className="text-secondary">Loading…</p>
         ) : items.length === 0 ? (

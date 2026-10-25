@@ -216,7 +216,7 @@ export default function PendingPage({ onCountChange }: { onCountChange?: (count:
 
   return (
     <div className="pending-page">
-      <h2>Pending</h2>
+      <h1>Recipes to review</h1>
       <p className="pending-page-hint">
         Recipes generated in the background, waiting for you. Save the ones you like or reject the rest.
         Discarded automatically after 7 days.
