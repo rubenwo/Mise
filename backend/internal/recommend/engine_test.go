@@ -55,7 +55,14 @@ func TestRecommendSkipsCookedExcludedAndSameDish(t *testing.T) {
 		t.Fatalf("got %d picks, want 12", len(picks))
 	}
 	seen := map[int]bool{}
+	reasons := map[string]bool{}
 	for _, p := range picks {
+		if p.Lane == LaneSimilar {
+			if reasons[p.Reason] {
+				t.Errorf("two similar picks share the reason %q", p.Reason)
+			}
+			reasons[p.Reason] = true
+		}
 		if p.RecipeID == 1 || p.RecipeID == 9 || exclude[p.RecipeID] {
 			t.Errorf("picked cooked or excluded recipe %d", p.RecipeID)
 		}

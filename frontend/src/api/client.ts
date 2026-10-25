@@ -205,6 +205,17 @@ export function getRecommendations(
   return request<RecommendedRecipe[]>(`/recommendations?${params}`, { signal });
 }
 
+export interface RecommendationStatus {
+  recipes: number;
+  embedded: number;
+  embedding_model: string;
+  families: number;
+}
+
+export function getRecommendationStatus(signal?: AbortSignal) {
+  return request<RecommendationStatus>('/recommendations/status', { signal });
+}
+
 export function recordImpressions(recipeIds: number[]) {
   return request<void>('/recommendations/impressions', { method: 'POST', body: { recipe_ids: recipeIds } });
 }

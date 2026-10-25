@@ -27,6 +27,7 @@ type Service struct {
 	mu       sync.Mutex
 	model    *Model
 	modelKey string
+	embModel string // embedding model the cached model was built with
 }
 
 func NewService(q *database.Queries, pool *llm.ClientPool) *Service {
@@ -142,6 +143,7 @@ func (s *Service) currentModel(ctx context.Context) (*Model, error) {
 	start := time.Now()
 	s.model = Build(recipes, 1)
 	s.modelKey = key
+	s.embModel = embModel
 	slog.Info("built recommendation model", "recipes", len(recipes), "families", s.model.Families(),
 		"embeddings", modelCount[embModel], "took", time.Since(start).Round(time.Millisecond))
 	return s.model, nil
@@ -194,6 +196,33 @@ func (s *Service) feedback(ctx context.Context) (map[int]Feedback, error) {
 		fb[id] = f
 	}
 	return fb, nil
+}
+
+// Status describes the recommender for the settings page.
+type Status struct {
+	Recipes  int    `json:"recipes"`
+	Embedded int    `json:"embedded"`
+	Model    string `json:"embedding_model"`
+	Families int    `json:"families"`
+}
+
+// Status reports how many recipes the model covers, how many of them have
+// embeddings and how many flavour families it found.
+func (s *Service) Status(ctx context.Context) (Status, error) {
+	m, err := s.currentModel(ctx)
+	if err != nil {
+		return Status{}, err
+	}
+	st := Status{Recipes: len(m.recipes), Families: m.Families()}
+	for _, e := range m.emb {
+		if e != nil {
+			st.Embedded++
+		}
+	}
+	s.mu.Lock()
+	st.Model = s.embModel
+	s.mu.Unlock()
+	return st, nil
 }
 
 // RecordImpressions notes that the given recipes were shown to the user today.

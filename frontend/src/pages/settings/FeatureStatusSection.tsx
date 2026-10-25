@@ -1,4 +1,4 @@
-import { getFeatureStatus } from '../../api/client';
+import { getFeatureStatus, getRecommendationStatus } from '../../api/client';
 import { useFetch } from '../../hooks/useFetch';
 
 interface FeatureDef {
@@ -55,6 +55,7 @@ const FEATURE_DEFS: FeatureDef[] = [
 
 export default function FeatureStatusSection() {
   const { data, error } = useFetch('features', getFeatureStatus);
+  const rec = useFetch('recommendation-status', getRecommendationStatus);
   // On failure, show every feature as unconfigured rather than hiding the section.
   const status = data ?? (error ? {} : null);
 
@@ -78,6 +79,12 @@ export default function FeatureStatusSection() {
               <div className="feature-status-info">
                 <span className="feature-status-label">{f.label}</span>
                 <span className="feature-status-detail">{f.detail}</span>
+                {f.tag === 'embedding' && rec.data && (
+                  <span className="feature-status-detail">
+                    {rec.data.recipes} recipes in {rec.data.families} flavour families · {rec.data.embedded} embedded
+                    {rec.data.embedding_model && ` with ${rec.data.embedding_model}`}
+                  </span>
+                )}
               </div>
               <span className={`health-badge health-${s === 'available' ? 'healthy' : s === 'offline' ? 'offline' : 'unknown'}`}>
                 {s}

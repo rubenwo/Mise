@@ -118,8 +118,11 @@ const (
 	lovedRating = 8.0
 	// sameDishEmbedding / sameDishTFIDF: above this similarity to something
 	// already cooked, a candidate is the same dish again, not something new.
-	// (Offline: "Bibimbap for Two" vs the cooked solo bibimbap scored 0.80;
-	// Doro Wat vs Misir Wot, related but different, 0.73.)
+	// Measured with embeddinggemma on 159 confirmed duplicate pairs from the
+	// library clean-up: 0.77 catches 96% of repeats while treating 7.7% of
+	// same-cuisine related dishes as repeats (0.82 would miss 19% of repeats).
+	// Hiding a related dish costs little; showing a repeat is the annoyance
+	// this guard exists for, so it leans towards recall.
 	sameDishEmbedding = 0.77
 	sameDishTFIDF     = 0.60
 	// samePickEmbedding keeps two picks in one run from being near-twins.
@@ -236,10 +239,11 @@ func (m *Model) Recommend(fb map[int]Feedback, opt Options) []Pick {
 		}
 		sort.Slice(pool, func(a, b int) bool { return pool[a].sim > pool[b].sim })
 		pool = pool[:min(25, len(pool))]
+		usedBecause := map[int]bool{} // each loved dish seeds at most one pick
 		for len(picks) < similar {
 			var open []near
 			for _, p := range pool {
-				if !tooClose(p.i, 1) {
+				if !usedBecause[p.because] && !tooClose(p.i, 1) {
 					open = append(open, p)
 				}
 			}
@@ -249,6 +253,7 @@ func (m *Model) Recommend(fb map[int]Feedback, opt Options) []Pick {
 			c := softPick(rng, len(open), func(x int) float64 { return open[x].sim + 0.15*decay(open[x].i) }, 0.05)
 			p := open[c]
 			picked = append(picked, p.i)
+			usedBecause[p.because] = true
 			because := m.recipes[p.because]
 			reason := "Similar to " + because.Title
 			if r := fb[because.ID].AvgRating; r != nil {

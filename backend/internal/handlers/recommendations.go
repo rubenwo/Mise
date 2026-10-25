@@ -148,6 +148,16 @@ func (h *RecommendationHandler) recipesFor(r *http.Request, picks []recommend.Pi
 	return out, nil
 }
 
+// Status reports recommender coverage for the settings page.
+func (h *RecommendationHandler) Status(w http.ResponseWriter, r *http.Request) {
+	st, err := h.service.Status(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to build recommendations")
+		return
+	}
+	writeJSON(w, http.StatusOK, st)
+}
+
 type impressionsRequest struct {
 	RecipeIDs []int `json:"recipe_ids"`
 }
