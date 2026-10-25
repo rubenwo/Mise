@@ -23,3 +23,25 @@ export function defaultPlanName(start = new Date()): string {
 }
 
 export const servingsLabel = (n: number) => `${n} ${n === 1 ? 'serving' : 'servings'}`;
+
+/**
+ * Scales an ingredient amount and rounds it the way a cook would write it:
+ * whole items and spoons to the nearest quarter, small weights to whole
+ * numbers, larger ones to the nearest 5.
+ */
+export function scaleAmount(amount: number, factor: number, unit: string): string {
+  if (!amount) return '';
+  const v = amount * factor;
+  const u = unit.toLowerCase();
+  let rounded: number;
+  if (u === '' || u === 'tsp' || u === 'tbsp' || u === 'clove' || u === 'stalk') {
+    rounded = Math.max(0.25, Math.round(v * 4) / 4);
+  } else if (v >= 100) {
+    rounded = Math.round(v / 5) * 5;
+  } else if (v >= 10) {
+    rounded = Math.round(v);
+  } else {
+    rounded = Math.round(v * 10) / 10;
+  }
+  return String(rounded);
+}

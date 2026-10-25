@@ -12,7 +12,7 @@ interface AddToPlanMenuProps {
 export default function AddToPlanMenu({ recipeId, anchorRef, onClose }: AddToPlanMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const { data: allPlans, loading } = useFetch('plans', listPlans);
-  const plans = (allPlans ?? []).filter(p => p.status === 'draft');
+  const plans = (allPlans ?? []).filter(p => p.status !== 'completed');
   const [adding, setAdding] = useState<number | null>(null);
   const [done, setDone] = useState<number | 'new' | null>(null);
   const [showNewPlan, setShowNewPlan] = useState(false);
