@@ -2,14 +2,15 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, Shuffle } from 'lucide-react';
 import {
-  getPlan, getRecommendations, listCuisines, listPendingRecipes, listPlans, recordImpressions, updatePlanRecipe,
+  getPlan, getRecommendations, getSettings, listCuisines, listPendingRecipes, listPlans, recordImpressions, updatePlanRecipe,
 } from '../api/client';
 import AddToPlanMenu from '../components/AddToPlanMenu';
 import { revalidateEatCounts } from '../hooks/useEatCounts';
 import { errorMessage, useFetch } from '../hooks/useFetch';
 import type { CuisineMeta, MealPlan, RecommendedRecipe } from '../types';
 
-const PICKS = 3;
+// Default number of home picks; Settings → General → Home picks overrides it.
+const DEFAULT_PICKS = 3;
 
 function PickCard({ pick }: { pick: RecommendedRecipe }) {
   const { recipe } = pick;
@@ -102,7 +103,13 @@ function cuisinesOfTheDay(cuisines: CuisineMeta[]): CuisineMeta[] {
 
 export default function HomePage() {
   const [round, setRound] = useState(0);
-  const picks = useFetch(`home-picks:${round}`, signal => getRecommendations({ limit: PICKS, offset: round * PICKS }, signal));
+  const settings = useFetch('settings', getSettings);
+  const configured = parseInt(settings.data?.find(s => s.key === 'suggestion_count')?.value ?? '', 10);
+  const count = Math.min(10, Math.max(1, configured || DEFAULT_PICKS));
+  const picks = useFetch(
+    settings.data || settings.error ? `home-picks:${count}:${round}` : null,
+    signal => getRecommendations({ limit: count, offset: round * count }, signal),
+  );
   const plans = useFetch('plans', listPlans);
   const pending = useFetch('pending', listPendingRecipes);
   const cuisines = useFetch('cuisines', listCuisines);
@@ -133,7 +140,7 @@ export default function HomePage() {
         <section className="home-picks" aria-label="Fresh picks">
           {picks.error && <div className="error-message">{picks.error}</div>}
           {(picks.data ?? []).map(p => <PickCard key={p.recipe.id} pick={p} />)}
-          {picks.loading && !picks.data && Array.from({ length: PICKS }, (_, i) => <div key={i} className="pick-card pick-card-skeleton" />)}
+          {!picks.data && !picks.error && Array.from({ length: count }, (_, i) => <div key={i} className="pick-card pick-card-skeleton" />)}
         </section>
 
         <div className="home-side">

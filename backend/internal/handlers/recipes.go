@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"slices"
 	"strconv"
 	"time"
 
@@ -323,40 +322,6 @@ func (h *RecipeHandler) EatCounts(w http.ResponseWriter, r *http.Request) {
 		stats = []models.RecipeEatStats{}
 	}
 	writeJSON(w, http.StatusOK, stats)
-}
-
-func (h *RecipeHandler) Suggestions(w http.ResponseWriter, r *http.Request) {
-	count, _ := strconv.Atoi(r.URL.Query().Get("count"))
-	if count <= 0 {
-		count = 3
-	}
-	if count > 10 {
-		count = 10
-	}
-
-	meta, err := h.queries.ListRecipeMeta(r.Context())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to load recipes")
-		return
-	}
-
-	ids := selectSuggestedIDs(meta, count, time.Now())
-	recipes, err := h.queries.GetRecipesByIDs(r.Context(), ids)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to load suggestions")
-		return
-	}
-
-	// Preserve the selection order.
-	order := make(map[int]int, len(ids))
-	for i, id := range ids {
-		order[id] = i
-	}
-	slices.SortFunc(recipes, func(a, b models.Recipe) int {
-		return order[a.ID] - order[b.ID]
-	})
-
-	writeJSON(w, http.StatusOK, recipes)
 }
 
 // FindDuplicates scans all recipes and returns groups of likely duplicates,

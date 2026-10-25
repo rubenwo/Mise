@@ -20,7 +20,7 @@ export default function GeneralSettings() {
       <h3>General</h3>
       <div className="settings-form">
         <div className="settings-field">
-          <label>Daily suggestions</label>
+          <label>Home picks</label>
           <input
             type="number"
             min="1"
@@ -28,7 +28,7 @@ export default function GeneralSettings() {
             value={values.suggestion_count}
             onChange={e => set('suggestion_count', e.target.value)}
           />
-          <span className="settings-hint">Number of daily recipe suggestions shown at the top of the Library</span>
+          <span className="settings-hint">How many new-to-you recipes the home page suggests each day</span>
         </div>
         <div className="settings-field">
           <label>Default Servings</label>

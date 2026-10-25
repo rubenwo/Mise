@@ -3,7 +3,6 @@ package handlers
 import (
 	"slices"
 	"testing"
-	"time"
 
 	"github.com/rubenwo/mise/internal/database"
 	"github.com/rubenwo/mise/internal/models"
@@ -61,43 +60,6 @@ func TestDiversifyCuisines(t *testing.T) {
 	ids := []int{got[0].ID, got[1].ID}
 	if !slices.Equal(ids, []int{3, 2}) {
 		t.Errorf("diversifyCuisines ids = %v, want [3 2]", ids)
-	}
-}
-
-func TestSelectSuggestedIDs(t *testing.T) {
-	now := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
-	meta := []database.RecipeMeta{
-		{ID: 1, CuisineType: "Italian", CreatedAt: now.AddDate(0, 0, -100)},
-		{ID: 2, CuisineType: "Italian", CreatedAt: now.AddDate(0, 0, -1)},
-		{ID: 3, CuisineType: "Thai", CreatedAt: now.AddDate(0, 0, -50)},
-		{ID: 4, CuisineType: "", CreatedAt: now.AddDate(0, 0, -5)},
-	}
-
-	if got := selectSuggestedIDs(nil, 3, now); got != nil {
-		t.Errorf("empty meta: got %v, want nil", got)
-	}
-
-	first := selectSuggestedIDs(meta, 3, now)
-	second := selectSuggestedIDs(meta, 3, now)
-	if !slices.Equal(first, second) {
-		t.Errorf("same day should be stable: %v vs %v", first, second)
-	}
-	if len(first) != 3 {
-		t.Fatalf("got %d ids, want 3", len(first))
-	}
-
-	// Three cuisine pools and three picks → one recipe per cuisine.
-	byID := map[int]string{1: "Italian", 2: "Italian", 3: "Thai", 4: "Other"}
-	seen := map[string]bool{}
-	for _, id := range first {
-		seen[byID[id]] = true
-	}
-	if len(seen) != 3 {
-		t.Errorf("expected one pick per cuisine, got ids %v", first)
-	}
-
-	if got := selectSuggestedIDs(meta, 10, now); len(got) != len(meta) {
-		t.Errorf("count > len: got %d ids, want %d", len(got), len(meta))
 	}
 }
 
