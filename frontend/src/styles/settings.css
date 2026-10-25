@@ -75,6 +75,9 @@
   color: var(--text);
 }
 .settings-field input[type="time"] { width: 140px; }
+/* Checkboxes sit inline with their label instead of taking the text-input box. */
+.settings-field input[type="checkbox"] { width: 18px; height: 18px; padding: 0; margin: 0 8px 0 0; vertical-align: middle; accent-color: var(--accent); }
+.settings-field label:has(> input[type="checkbox"]) { display: inline-flex; align-items: center; font-size: 14px; cursor: pointer; }
 .settings-field input:focus, .settings-field select:focus { outline: none; border-color: var(--text); box-shadow: 0 0 0 3px var(--primary-soft); }
 .settings-hint { font-size: 12px; color: var(--text-muted); line-height: 1.4; }
 

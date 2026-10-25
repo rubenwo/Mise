@@ -135,25 +135,31 @@
 .tag-picker-input-row input { flex: 1; padding: 6px 10px; border: 1px solid var(--border-strong); border-radius: 7px; font-family: var(--font-body); font-size: 12.5px; background: var(--surface); color: var(--text); }
 
 /* ── Day picker ─────────────────────────────────────────────────────────── */
+/* Scoped under .day-picker: the chips are <label>s, and the settings page's
+   ".settings-field label" colour rule would otherwise win (black on black). */
 .day-picker { display: flex; flex-wrap: wrap; gap: 6px; }
-.day-chip {
+.day-picker .day-chip {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 40px;
-  padding: 4px 10px;
-  border-radius: 7px;
-  border: 1px solid var(--border);
+  min-width: 48px;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-strong);
   background: var(--surface);
-  color: var(--text-secondary);
-  font-size: 12.5px;
-  font-weight: 500;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
   cursor: pointer;
   user-select: none;
-  transition: all var(--motion-quick);
+  transition: background var(--motion-quick), border-color var(--motion-quick), color var(--motion-quick);
 }
-.day-chip-active { background: var(--text); border-color: var(--text); color: var(--surface); }
-.day-chip:hover:not(.day-chip-active) { border-color: var(--border-strong); color: var(--text); }
+.day-picker .day-chip input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+.day-picker .day-chip:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.day-picker .day-chip-active { background: var(--primary); border-color: var(--primary); color: var(--text-on-primary); }
+.day-picker .day-chip:hover:not(.day-chip-active) { border-color: var(--text-muted); }
 
 /* ── Recipe edit form ───────────────────────────────────────────────────── */
 .recipe-edit-form { padding: 24px 28px 28px; border-top: 1px solid var(--border); }
