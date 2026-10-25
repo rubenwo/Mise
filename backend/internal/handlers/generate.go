@@ -71,6 +71,28 @@ func (h *GenerateHandler) Single(w http.ResponseWriter, r *http.Request) {
 	h.streamGeneration(w, r, prompt, avoidTitles, fps)
 }
 
+// generateSlot runs one batch generation, forwarding its progress events to
+// out tagged with the slot index. The final "recipe" event is withheld so the
+// caller can check the result against the rest of the batch first.
+func (h *GenerateHandler) generateSlot(ctx context.Context, prompt string, avoid []string, idx int, out chan<- llm.SSEEvent) (*models.Recipe, []llm.Message, error) {
+	events := make(chan llm.SSEEvent, 10)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for e := range events {
+			if e.Type == "recipe" {
+				continue
+			}
+			e.Index = idx
+			out <- e
+		}
+	}()
+	recipe, messages, err := h.orchestrator.GenerateWithTag(ctx, prompt, avoid, events, "generation")
+	close(events)
+	<-done // all progress events forwarded before the caller decides
+	return recipe, messages, err
+}
+
 func (h *GenerateHandler) Batch(w http.ResponseWriter, r *http.Request) {
 	var req models.BatchGenerateRequest
 	if !decodeJSON(w, r, &req) {
@@ -110,8 +132,8 @@ func (h *GenerateHandler) Batch(w http.ResponseWriter, r *http.Request) {
 		}
 		avoidTitles[i] = h.avoidTitles(r.Context(), slotReq.CuisineType, fps)
 		prompts[i] = llm.BuildGeneratePrompt(slotReq, cuisineCounts)
-		prompts[i] += fmt.Sprintf(" (Recipe %d of %d — make it unique from others in this batch.)", i+1, req.Count)
 	}
+	var tracker batchTracker
 
 	type batchResult struct {
 		prompt   string
@@ -128,23 +150,30 @@ func (h *GenerateHandler) Batch(w http.ResponseWriter, r *http.Request) {
 		wg.Add(1)
 		go func(idx int, prompt string) {
 			defer wg.Done()
-			events := make(chan llm.SSEEvent, 10)
-
-			// Forward this goroutine's events into the shared fan-in channel,
-			// tagging each with the slot index so the client can color-code them.
-			var fwdWg sync.WaitGroup
-			fwdWg.Add(1)
-			go func() {
-				defer fwdWg.Done()
-				for e := range events {
-					e.Index = idx
-					allEvents <- e
+			avoid := avoidTitles[idx]
+			var recipe *models.Recipe
+			var messages []llm.Message
+			var genErr error
+			// One retry if another slot already produced the same dish.
+			for attempt := 0; ; attempt++ {
+				recipe, messages, genErr = h.generateSlot(r.Context(), prompt, avoid, idx, allEvents)
+				if genErr != nil || recipe == nil {
+					break
 				}
-			}()
-
-			recipe, messages, genErr := h.orchestrator.GenerateWithTag(r.Context(), prompt, avoidTitles[idx], events, "generation")
-			close(events)
-			fwdWg.Wait() // ensure all events are forwarded before signalling done
+				dup, ok := tracker.claim(*recipe, attempt > 0)
+				if ok {
+					// The recipe event was held back until now so a rejected
+					// duplicate never reaches the client.
+					allEvents <- llm.SSEEvent{Type: "recipe", Data: *recipe, Index: idx}
+					break
+				}
+				allEvents <- llm.SSEEvent{
+					Type:    "status",
+					Message: fmt.Sprintf("%q is already in this batch; generating a different dish...", dup),
+					Index:   idx,
+				}
+				avoid = append([]string{dup}, avoid...)
+			}
 
 			if genErr != nil {
 				allEvents <- llm.SSEEvent{Type: "error", Message: genErr.Error(), Index: idx}
