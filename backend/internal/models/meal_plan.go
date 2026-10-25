@@ -9,6 +9,11 @@ type MealPlan struct {
 	Recipes   []MealPlanRecipe `json:"recipes,omitempty"`
 	CreatedAt time.Time        `json:"created_at"`
 	UpdatedAt time.Time        `json:"updated_at"`
+
+	// List-only summary; zero on single-plan responses.
+	RecipeCount   int      `json:"recipe_count,omitempty"`
+	CookedCount   int      `json:"cooked_count,omitempty"`
+	PreviewImages []string `json:"preview_images,omitempty"`
 }
 
 type MealPlanRecipe struct {

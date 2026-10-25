@@ -163,9 +163,8 @@ var ingredientAliases = map[string]string{
 	// ── Herbs ──────────────────────────────────────────────────────────────────
 	// "coriander" alone safely maps to cilantro: compound forms like
 	// "coriander seed" and "ground coriander" are never affected by this alias.
-	"coriander":       "cilantro", // UK/EU leaf name → US name
-	"coriander leaf":  "cilantro",
-	"coriander leave": "cilantro", // post-normalization form of "coriander leaves"
+	"coriander":      "cilantro", // UK/EU leaf name → US name
+	"coriander leaf": "cilantro",
 	// Parsley variants
 	"flat leaf parsley": "parsley",
 	"flat-leaf parsley": "parsley",
@@ -226,6 +225,20 @@ var ingredientAliases = map[string]string{
 	"filbert":   "hazelnut", // old/regional name for hazelnut
 }
 
+// irregularPlurals maps plural last words whose singular is not just "minus s".
+var irregularPlurals = map[string]string{
+	"leaves":    "leaf",
+	"halves":    "half",
+	"loaves":    "loaf",
+	"potatoes":  "potato",
+	"tomatoes":  "tomato",
+	"mangoes":   "mango",
+	"chillies":  "chilli",
+	"chilies":   "chili",
+	"anchovies": "anchovy",
+	"cherries":  "cherry",
+}
+
 // nonPluralNames end in "s" but are not plurals, so the trailing "s" is kept.
 var nonPluralNames = map[string]bool{
 	"molasses": true,
@@ -276,9 +289,17 @@ func Normalize(name string) string {
 	if idx := strings.Index(name, "("); idx >= 0 {
 		name = strings.TrimSpace(name[:idx])
 	}
-	// Strip after comma: "butter, softened" → "butter"
-	if idx := strings.Index(name, ","); idx >= 0 {
-		name = strings.TrimSpace(name[:idx])
+	// Keep the first comma-separated part that names something: "butter, softened"
+	// → "butter", but "boneless, skinless chicken thighs" → "skinless chicken thighs".
+	if strings.Contains(name, ",") {
+		parts := strings.Split(name, ",")
+		name = strings.TrimSpace(parts[0])
+		for _, p := range parts {
+			if p = strings.TrimSpace(p); p != "" && !onlyAdjectives(p) {
+				name = p
+				break
+			}
+		}
 	}
 	// Strip common trailing phrases
 	for _, suffix := range []string{" for serving", " for garnish", " for coating", " to taste", " to serve"} {
@@ -294,8 +315,14 @@ func Normalize(name string) string {
 	// Normalize simple plurals: "eggs" → "egg", "onions" → "onion"
 	// Skip "-ss"/"-us" words ("swiss", "hummus", "asparagus") and known
 	// singular-looking exceptions like "molasses".
-	if len(name) > 3 && strings.HasSuffix(name, "s") &&
-		!strings.HasSuffix(name, "ss") && !strings.HasSuffix(name, "us") && !nonPluralNames[name] {
+	last := words[len(words)-1]
+	switch {
+	case irregularPlurals[last] != "":
+		name = strings.TrimSuffix(name, last) + irregularPlurals[last]
+	case strings.HasSuffix(last, "berries"):
+		name = strings.TrimSuffix(name, "ies") + "y"
+	case len(name) > 3 && strings.HasSuffix(name, "s") &&
+		!strings.HasSuffix(name, "ss") && !strings.HasSuffix(name, "us") && !nonPluralNames[name]:
 		name = name[:len(name)-1]
 	}
 	// Apply synonym/alias table for known equivalents (flour variants, broth↔stock, etc.)
@@ -303,6 +330,16 @@ func Normalize(name string) string {
 		name = canonical
 	}
 	return name
+}
+
+// onlyAdjectives reports whether every word of s is a strippable descriptor.
+func onlyAdjectives(s string) bool {
+	for _, w := range strings.Fields(s) {
+		if !sizeAdjectives[w] {
+			return false
+		}
+	}
+	return true
 }
 
 // isCountableUnit returns true for units that represent indivisible whole items.

@@ -24,7 +24,7 @@ import type {
 
 const API_BASE = '/api';
 
-type Method = 'GET' | 'POST' | 'PATCH' | 'DELETE';
+type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 interface RequestOptions {
   method?: Method;
@@ -177,6 +177,19 @@ export function randomizePlan(planId: number, servings: number[], excludedIds: n
 
 export function orderPlanAH(planId: number) {
   return request<AHOrderResult>(`/plans/${planId}/order/ah`, { method: 'POST' });
+}
+
+/** The plan's last Albert Heijn search, or undefined if it was never searched. */
+export function getLastAHSearch(planId: number, signal?: AbortSignal) {
+  return request<AHOrderResult | undefined>(`/plans/${planId}/order/ah`, { signal });
+}
+
+export function getGroceryChecks(planId: number, signal?: AbortSignal) {
+  return request<string[]>(`/plans/${planId}/grocery-checks`, { signal });
+}
+
+export function setGroceryCheck(planId: number, name: string, checked: boolean) {
+  return request<void>(`/plans/${planId}/grocery-checks`, { method: 'PUT', body: { name, checked } });
 }
 
 // ── Settings ──────────────────────────────────────────

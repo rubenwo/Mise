@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -184,8 +185,9 @@ func (h *MealPlanHandler) Ingredients(w http.ResponseWriter, r *http.Request) {
 }
 
 type AHOrderResult struct {
-	Matched  []AHMatchedIngredient         `json:"matched"`
-	NotFound []models.AggregatedIngredient `json:"not_found"`
+	Matched    []AHMatchedIngredient         `json:"matched"`
+	NotFound   []models.AggregatedIngredient `json:"not_found"`
+	SearchedAt *time.Time                    `json:"searched_at,omitempty"`
 }
 
 type AHMatchedIngredient struct {
@@ -266,7 +268,83 @@ func (h *MealPlanHandler) OrderAH(w http.ResponseWriter, r *http.Request) {
 		notFound = []models.AggregatedIngredient{}
 	}
 
-	writeJSON(w, http.StatusOK, AHOrderResult{Matched: matched, NotFound: notFound})
+	res := AHOrderResult{Matched: matched, NotFound: notFound}
+	if data, err := json.Marshal(res); err == nil {
+		if at, err := h.queries.SavePlanAHSearch(r.Context(), id, data); err == nil {
+			res.SearchedAt = &at
+		} else {
+			log.Printf("Saving AH search for plan %d failed: %v", id, err)
+		}
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+// LastAHSearch returns the plan's most recent Albert Heijn search, or 204 if
+// it was never searched.
+func (h *MealPlanHandler) LastAHSearch(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id", "invalid id")
+	if !ok {
+		return
+	}
+	data, at, err := h.queries.GetPlanAHSearch(r.Context(), id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load Albert Heijn search")
+		return
+	}
+	var res AHOrderResult
+	if err := json.Unmarshal(data, &res); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load Albert Heijn search")
+		return
+	}
+	res.SearchedAt = &at
+	writeJSON(w, http.StatusOK, res)
+}
+
+// GroceryChecks lists the grocery items ticked off for a plan.
+func (h *MealPlanHandler) GroceryChecks(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id", "invalid id")
+	if !ok {
+		return
+	}
+	names, err := h.queries.ListGroceryChecks(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load grocery checks")
+		return
+	}
+	if names == nil {
+		names = []string{}
+	}
+	writeJSON(w, http.StatusOK, names)
+}
+
+type groceryCheckRequest struct {
+	Name    string `json:"name"`
+	Checked bool   `json:"checked"`
+}
+
+// SetGroceryCheck ticks one grocery item off or puts it back on the list.
+func (h *MealPlanHandler) SetGroceryCheck(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id", "invalid id")
+	if !ok {
+		return
+	}
+	var req groceryCheckRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	if err := h.queries.SetGroceryCheck(r.Context(), id, req.Name, req.Checked); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to save grocery check")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *MealPlanHandler) Delete(w http.ResponseWriter, r *http.Request) {

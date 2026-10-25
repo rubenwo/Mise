@@ -2,7 +2,14 @@ import { useState } from 'react';
 import { orderPlanAH } from '../api/client';
 import type { AHOrderResult } from '../types';
 
-export default function AHOrderModal({ planId, onClose }: { planId: number; onClose: () => void }) {
+interface AHOrderModalProps {
+  planId: number;
+  onClose: () => void;
+  /** Called with each completed search, e.g. to refresh the plan's grocery panel. */
+  onResult?: (result: AHOrderResult) => void;
+}
+
+export default function AHOrderModal({ planId, onClose, onResult }: AHOrderModalProps) {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AHOrderResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -13,6 +20,7 @@ export default function AHOrderModal({ planId, onClose }: { planId: number; onCl
     try {
       const data = await orderPlanAH(planId);
       setResult(data);
+      onResult?.(data);
     } catch (err) {
       setError(err instanceof Error && err.message ? err.message : 'Failed to search Albert Heijn');
     } finally {
@@ -24,7 +32,7 @@ export default function AHOrderModal({ planId, onClose }: { planId: number; onCl
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <h3>Order at Albert Heijn</h3>
+          <h3>Find at Albert Heijn</h3>
           <button className="modal-close" onClick={onClose} aria-label="Close">&times;</button>
         </div>
 

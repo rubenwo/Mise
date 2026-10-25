@@ -23,6 +23,14 @@ func TestNormalizeIngredientName(t *testing.T) {
 		{"Whole wheat flour", "flour"},
 		{"large", "large"},
 		{"  Courgettes ", "zucchini"},
+		{"Basil leaves", "basil leaf"},
+		{"cherry tomatoes", "cherry tomato"},
+		{"Potatoes", "potato"},
+		{"blueberries", "blueberry"},
+		{"olives", "olive"},
+		{"boneless, skinless chicken thighs", "chicken thigh"},
+		{"chicken thighs, boneless", "chicken thigh"},
+		{"coriander leaves", "cilantro"},
 	}
 	for _, tt := range tests {
 		if got := Normalize(tt.in); got != tt.want {

@@ -106,6 +106,10 @@ export interface MealPlan {
   recipes?: MealPlanRecipe[];
   created_at: string;
   updated_at: string;
+  /** List-only summary fields. */
+  recipe_count?: number;
+  cooked_count?: number;
+  preview_images?: string[];
 }
 
 export interface UpdatePlanRecipeRequest {
@@ -134,6 +138,7 @@ export interface AHProduct {
 export interface AHOrderResult {
   matched: { ingredient: AggregatedIngredient; product: AHProduct }[];
   not_found: AggregatedIngredient[];
+  searched_at?: string;
 }
 
 export interface PlanSuggestions {

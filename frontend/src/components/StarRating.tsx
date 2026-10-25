@@ -1,14 +1,14 @@
 import { useState } from 'react';
 
-// Convention shown in the tooltip so users remember the scale.
-// 1 = never again, 6-7 = okay, 10 = amazing.
-const RATING_HINT = '1 — never again · 6-7 — okay · 10 — amazing';
+// The user's scale: 7+ is good food, 6 is fine only for a quick dish, and
+// 5 or lower means they didn't like it.
+const RATING_HINT = '5 or less — didn’t like it · 6 — fine if quick · 7 — good · 10 — amazing';
 
 function ratingLabel(value: number | null | undefined): string {
   if (value == null) return '';
-  if (value <= 2) return 'never again';
-  if (value <= 4) return 'meh';
-  if (value <= 7) return 'okay';
+  if (value <= 5) return 'didn’t like it';
+  if (value === 6) return 'fine if quick';
+  if (value === 7) return 'good';
   if (value <= 9) return 'great';
   return 'amazing';
 }

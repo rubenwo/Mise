@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/rubenwo/mise/internal/models"
@@ -20,23 +21,57 @@ func (q *Queries) CreateMealPlan(ctx context.Context, name string) (*models.Meal
 }
 
 func (q *Queries) ListMealPlans(ctx context.Context) ([]models.MealPlan, error) {
+	// Summary columns let the plans list show progress and thumbnails without
+	// loading every plan's recipes.
 	rows, err := q.pool.Query(ctx, `
-		SELECT id, name, status, created_at, updated_at
-		FROM meal_plans ORDER BY created_at DESC`)
+		SELECT mp.id, mp.name, mp.status, mp.created_at, mp.updated_at,
+			COUNT(mpr.id),
+			COUNT(CASE WHEN mpr.completed THEN 1 END)
+		FROM meal_plans mp
+		LEFT JOIN meal_plan_recipes mpr ON mpr.meal_plan_id = mp.id
+		GROUP BY mp.id, mp.name, mp.status, mp.created_at, mp.updated_at
+		ORDER BY mp.created_at DESC`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
 	var plans []models.MealPlan
+	index := map[int]int{}
 	for rows.Next() {
 		var p models.MealPlan
-		if err := rows.Scan(&p.ID, &p.Name, &p.Status, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Status, &p.CreatedAt, &p.UpdatedAt,
+			&p.RecipeCount, &p.CookedCount); err != nil {
 			return nil, err
 		}
+		index[p.ID] = len(plans)
 		plans = append(plans, p)
 	}
-	return plans, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	imgRows, err := q.pool.Query(ctx, `
+		SELECT mpr.meal_plan_id, r.image_url
+		FROM meal_plan_recipes mpr
+		JOIN recipes r ON r.id = mpr.recipe_id
+		WHERE r.image_url IS NOT NULL AND r.image_url <> ''
+		ORDER BY mpr.meal_plan_id, mpr.sort_order, mpr.id`)
+	if err != nil {
+		return nil, err
+	}
+	defer imgRows.Close()
+	for imgRows.Next() {
+		var planID int
+		var url string
+		if err := imgRows.Scan(&planID, &url); err != nil {
+			return nil, err
+		}
+		if i, ok := index[planID]; ok && len(plans[i].PreviewImages) < 4 {
+			plans[i].PreviewImages = append(plans[i].PreviewImages, url)
+		}
+	}
+	return plans, imgRows.Err()
 }
 
 func (q *Queries) GetMealPlan(ctx context.Context, id int) (*models.MealPlan, error) {
@@ -236,6 +271,50 @@ func (q *Queries) SetPlanNormalizedIngredients(ctx context.Context, planID int, 
 	_, err := q.pool.Exec(ctx,
 		"UPDATE meal_plans SET normalized_ingredients = $2 WHERE id = $1", planID, data)
 	return err
+}
+
+// ListGroceryChecks returns the names of grocery items ticked off for a plan.
+func (q *Queries) ListGroceryChecks(ctx context.Context, planID int) ([]string, error) {
+	rows, err := q.pool.Query(ctx,
+		"SELECT name FROM plan_grocery_checks WHERE meal_plan_id = $1 ORDER BY name", planID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
+}
+
+// SetGroceryCheck ticks a grocery item off (checked) or puts it back.
+func (q *Queries) SetGroceryCheck(ctx context.Context, planID int, name string, checked bool) error {
+	if checked {
+		_, err := q.pool.Exec(ctx, `
+			INSERT INTO plan_grocery_checks (meal_plan_id, name) VALUES ($1, $2)
+			ON CONFLICT DO NOTHING`, planID, name)
+		return err
+	}
+	_, err := q.pool.Exec(ctx,
+		"DELETE FROM plan_grocery_checks WHERE meal_plan_id = $1 AND name = $2", planID, name)
+	return err
+}
+
+// SavePlanAHSearch stores the latest Albert Heijn search result for a plan.
+func (q *Queries) SavePlanAHSearch(ctx context.Context, planID int, result []byte) (time.Time, error) {
+	var at time.Time
+	err := q.pool.QueryRow(ctx, `
+		INSERT INTO plan_ah_searches (meal_plan_id, result, searched_at) VALUES ($1, $2, NOW())
+		ON CONFLICT (meal_plan_id) DO UPDATE SET result = EXCLUDED.result, searched_at = EXCLUDED.searched_at
+		RETURNING searched_at`, planID, result).Scan(&at)
+	return at, err
+}
+
+// GetPlanAHSearch returns the latest stored Albert Heijn search, or
+// pgx.ErrNoRows if the plan was never searched.
+func (q *Queries) GetPlanAHSearch(ctx context.Context, planID int) ([]byte, time.Time, error) {
+	var data []byte
+	var at time.Time
+	err := q.pool.QueryRow(ctx,
+		"SELECT result, searched_at FROM plan_ah_searches WHERE meal_plan_id = $1", planID,
+	).Scan(&data, &at)
+	return data, at, err
 }
 
 func (q *Queries) InvalidatePlanIngredients(ctx context.Context, planID int) error {
