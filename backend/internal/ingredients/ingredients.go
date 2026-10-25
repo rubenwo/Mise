@@ -237,6 +237,7 @@ var irregularPlurals = map[string]string{
 	"chilies":   "chili",
 	"anchovies": "anchovy",
 	"cherries":  "cherry",
+	"fries":     "fries", // "french fries" is how it is bought
 }
 
 // nonPluralNames end in "s" but are not plurals, so the trailing "s" is kept.

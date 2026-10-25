@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"math/rand/v2"
 	"net/http"
 	"strings"
 	"sync"
@@ -515,44 +516,11 @@ func (h *MealPlanHandler) Randomize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now()
-	weightFor := func(s database.RecipeSummary) float64 {
-		w := 1.0
-		st, hasStats := statsByID[s.ID]
-		if hasStats && st.AvgRating != nil {
-			// 5★ -> 1.0, 10★ -> 2.0, 1★ -> 0.2. Clamp to avoid zero weight.
-			r := *st.AvgRating / 5.0
-			if r < 0.1 {
-				r = 0.1
-			}
-			w *= r
-		}
-		if hasStats && st.LastCookedAt != nil {
-			age := now.Sub(*st.LastCookedAt)
-			switch {
-			case age < 14*24*time.Hour:
-				w /= 3.0
-			case age < 30*24*time.Hour:
-				w /= 1.5
-			}
-		}
-		if hasStats && st.Count > 0 {
-			// Soft frequency penalty so well-loved recipes don't dominate forever.
-			// Cooked 3×→÷1.3, 10×→÷1.85, capped at ÷3.0.
-			divisor := 1.0 + 0.1*float64(st.Count)
-			if divisor > 3.0 {
-				divisor = 3.0
-			}
-			w /= divisor
-		}
-		if !everPlaced[s.ID] {
-			w *= 1.3
-		}
-		return w
-	}
+	weightFor := dinnerWeight(statsByID, everPlaced, now)
 
 	var selectedIDs []int
 	if h.recommender != nil {
-		ids, err := h.suggestDinners(r.Context(), pool, needed, weightFor, statsByID, existingIDs, excludedIDs, now)
+		ids, err := h.suggestDinners(r.Context(), pool, needed, needed/3, weightFor, statsByID, existingIDs, excludedIDs, now)
 		if err != nil {
 			log.Printf("Recommender unavailable for plan %d, using weighted random picks: %v", planID, err)
 		} else if len(ids) == needed {
@@ -654,11 +622,50 @@ func (h *MealPlanHandler) UpdateRecipe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, plan)
 }
 
-// suggestDinners fills a plan from two sources: about a third proven
-// favourites (rated 7+ and not cooked in the last three weeks, weighted as
-// before), the rest new-to-you dishes from the recommender so a plan
-// explores flavour families instead of drawing at random.
-func (h *MealPlanHandler) suggestDinners(ctx context.Context, pool []database.RecipeSummary, needed int,
+// dinnerWeight scores a recipe for plan filling: higher ratings up, recently
+// or frequently cooked dishes down, never-planned dishes slightly up.
+func dinnerWeight(statsByID map[int]models.RecipeEatStats, everPlaced map[int]bool, now time.Time) func(database.RecipeSummary) float64 {
+	return func(s database.RecipeSummary) float64 {
+		w := 1.0
+		st, hasStats := statsByID[s.ID]
+		if hasStats && st.AvgRating != nil {
+			// 5★ -> 1.0, 10★ -> 2.0, 1★ -> 0.2. Clamp to avoid zero weight.
+			r := *st.AvgRating / 5.0
+			if r < 0.1 {
+				r = 0.1
+			}
+			w *= r
+		}
+		if hasStats && st.LastCookedAt != nil {
+			age := now.Sub(*st.LastCookedAt)
+			switch {
+			case age < 14*24*time.Hour:
+				w /= 3.0
+			case age < 30*24*time.Hour:
+				w /= 1.5
+			}
+		}
+		if hasStats && st.Count > 0 {
+			// Soft frequency penalty so well-loved recipes don't dominate forever.
+			// Cooked 3×→÷1.3, 10×→÷1.85, capped at ÷3.0.
+			divisor := 1.0 + 0.1*float64(st.Count)
+			if divisor > 3.0 {
+				divisor = 3.0
+			}
+			w /= divisor
+		}
+		if !everPlaced[s.ID] {
+			w *= 1.3
+		}
+		return w
+	}
+}
+
+// suggestDinners fills needed slots from two sources: the given number of
+// favourites (rated 7+ and not cooked in the last three weeks, weighted by
+// dinnerWeight), and new-to-you dishes from the recommender for the rest, so
+// a plan explores flavour families instead of drawing at random.
+func (h *MealPlanHandler) suggestDinners(ctx context.Context, pool []database.RecipeSummary, needed, favourites int,
 	weightFor func(database.RecipeSummary) float64, stats map[int]models.RecipeEatStats,
 	existing, excluded map[int]bool, now time.Time) ([]int, error) {
 	var favPool []database.RecipeSummary
@@ -669,7 +676,7 @@ func (h *MealPlanHandler) suggestDinners(ctx context.Context, pool []database.Re
 			favPool = append(favPool, s)
 		}
 	}
-	favs := weightedSample(favPool, needed/3, weightFor)
+	favs := weightedSample(favPool, favourites, weightFor)
 
 	exclude := make(map[int]bool, len(existing)+len(excluded)+len(favs))
 	for id := range existing {
@@ -694,6 +701,116 @@ func (h *MealPlanHandler) suggestDinners(ctx context.Context, pool []database.Re
 	}
 	for _, p := range picks {
 		ids = append(ids, p.RecipeID)
+	}
+	return ids, nil
+}
+
+// ReplaceRecipes swaps the given uncooked dinners for new suggestions in
+// place, keeping each slot's servings and position.
+func (h *MealPlanHandler) ReplaceRecipes(w http.ResponseWriter, r *http.Request) {
+	planID, ok := pathID(w, r, "id", "invalid plan id")
+	if !ok {
+		return
+	}
+	var req models.ReplaceRecipesRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if len(req.RecipeIDs) == 0 {
+		writeError(w, http.StatusBadRequest, "recipe_ids is required")
+		return
+	}
+	plan, err := h.queries.GetMealPlan(r.Context(), planID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "plan not found")
+		return
+	}
+
+	exclude := map[int]bool{}
+	open := map[int]bool{}
+	for _, mpr := range plan.Recipes {
+		exclude[mpr.RecipeID] = true
+		if !mpr.Completed {
+			open[mpr.RecipeID] = true
+		}
+	}
+	for _, id := range req.ExcludedIDs {
+		exclude[id] = true
+	}
+	for _, id := range req.RecipeIDs {
+		if !open[id] {
+			writeError(w, http.StatusBadRequest, "only uncooked dinners in this plan can be replaced")
+			return
+		}
+	}
+
+	newIDs, err := h.pickReplacements(r.Context(), len(req.RecipeIDs), exclude)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to pick replacements")
+		return
+	}
+	for i, oldID := range req.RecipeIDs[:min(len(req.RecipeIDs), len(newIDs))] {
+		if err := h.queries.SwapPlanRecipe(r.Context(), planID, oldID, newIDs[i]); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to replace dinner")
+			return
+		}
+	}
+	_ = h.queries.InvalidatePlanIngredients(r.Context(), planID)
+
+	updated, err := h.queries.GetMealPlan(r.Context(), planID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to get updated plan")
+		return
+	}
+	writeJSON(w, http.StatusOK, updated)
+}
+
+// pickReplacements chooses n dinners with the same mix as plan filling:
+// each slot has a one-in-three chance of being a favourite not cooked in
+// three weeks, the rest are new-to-you recommendations. Without the
+// recommender it falls back to the weighted draw.
+func (h *MealPlanHandler) pickReplacements(ctx context.Context, n int, exclude map[int]bool) ([]int, error) {
+	summaries, err := h.queries.ListRecipeSummaries(ctx)
+	if err != nil {
+		return nil, err
+	}
+	everPlaced, err := h.queries.ListEatenRecipeIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	eatStats, err := h.queries.ListRecipeEatCounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	stats := make(map[int]models.RecipeEatStats, len(eatStats))
+	for _, st := range eatStats {
+		stats[st.RecipeID] = st
+	}
+	var pool []database.RecipeSummary
+	for _, s := range summaries {
+		if !exclude[s.ID] {
+			pool = append(pool, s)
+		}
+	}
+	now := time.Now()
+	weight := dinnerWeight(stats, everPlaced, now)
+
+	if h.recommender != nil {
+		favourites := 0
+		for range n {
+			if rand.Float64() < 1.0/3 {
+				favourites++
+			}
+		}
+		ids, err := h.suggestDinners(ctx, pool, n, favourites, weight, stats, exclude, nil, now)
+		if err == nil && len(ids) == n {
+			return ids, nil
+		}
+		log.Printf("Recommender unavailable for replacement, using weighted picks: %v", err)
+	}
+	var ids []int
+	for _, s := range weightedSample(pool, n, weight) {
+		ids = append(ids, s.ID)
 	}
 	return ids, nil
 }

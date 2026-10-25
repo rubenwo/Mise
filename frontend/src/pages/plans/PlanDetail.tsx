@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Plus, Shuffle } from 'lucide-react';
+import { ArrowLeft, Plus, RefreshCw, Shuffle } from 'lucide-react';
 import {
   addRecipeToPlan, getPlan, getPlanIngredients,
-  randomizePlan, removeRecipeFromPlan, updatePlan, updatePlanRecipe,
+  randomizePlan, removeRecipeFromPlan, replacePlanRecipes, updatePlan, updatePlanRecipe,
 } from '../../api/client';
 import Stepper from '../../components/ui/Stepper';
 import { revalidateEatCounts } from '../../hooks/useEatCounts';
@@ -31,6 +31,11 @@ export default function PlanDetail({ planId }: { planId: number }) {
   const [randomDays, setRandomDays] = useState([2]);
   const [randomizing, setRandomizing] = useState(false);
   const [removedIds, setRemovedIds] = useState<Set<number>>(new Set());
+  // Dinners ticked for replacement, and everything replaced so far this
+  // visit, so a replacement never brings back a dish you just swapped out.
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [replaced, setReplaced] = useState<Set<number>>(new Set());
+  const [replacing, setReplacing] = useState(false);
 
   /** Runs a plan mutation, applies the returned plan, and reports failures. */
   const mutate = async (
@@ -67,6 +72,21 @@ export default function PlanDetail({ planId }: { planId: number }) {
     await mutate(() => randomizePlan(planId, randomDays, [...removedIds]), { ingredients: true });
     setRemovedIds(new Set());
     setRandomizing(false);
+  };
+
+  const toggleSelected = (recipeId: number, on: boolean) => setSelected(prev => {
+    const next = new Set(prev);
+    if (on) next.add(recipeId); else next.delete(recipeId);
+    return next;
+  });
+
+  const replaceSelected = async () => {
+    const ids = [...selected];
+    setReplacing(true);
+    await mutate(() => replacePlanRecipes(planId, ids, [...replaced, ...removedIds]), { ingredients: true });
+    setReplaced(prev => new Set([...prev, ...ids]));
+    setSelected(new Set());
+    setReplacing(false);
   };
 
   const togglePanel = (p: Panel) => setPanel(cur => (cur === p ? 'none' : p));
@@ -155,6 +175,16 @@ export default function PlanDetail({ planId }: { planId: number }) {
 
       <div className="plan-layout">
         <section className="dinner-list" aria-label="Dinners">
+          {selected.size > 0 && (
+            <div className="replace-bar" role="region" aria-label="Replace selected dinners">
+              <span>{selected.size} selected</span>
+              <button type="button" className="btn btn-primary" onClick={replaceSelected} disabled={replacing}>
+                <RefreshCw size={16} aria-hidden="true" />
+                {replacing ? 'Finding new dinners…' : 'Replace with new suggestions'}
+              </button>
+              <button type="button" className="btn-link" onClick={() => setSelected(new Set())}>Clear</button>
+            </div>
+          )}
           {dinners.length === 0 ? (
             <div className="empty-panel">
               <p>No dinners in this plan yet.</p>
@@ -171,6 +201,8 @@ export default function PlanDetail({ planId }: { planId: number }) {
                 onSkip={skipped => mutate(() => updatePlanRecipe(planId, d.recipe_id, { skipped }), { eatCounts: true })}
                 onRate={rating => mutate(() => updatePlanRecipe(planId, d.recipe_id, { rating }), { eatCounts: true })}
                 onRemove={() => remove(d.recipe_id)}
+                selected={selected.has(d.recipe_id)}
+                onSelect={editable && !d.completed ? on => toggleSelected(d.recipe_id, on) : undefined}
               />
             ))
           )}

@@ -28,6 +28,7 @@ func TestNormalizeIngredientName(t *testing.T) {
 		{"Potatoes", "potato"},
 		{"blueberries", "blueberry"},
 		{"olives", "olive"},
+		{"French fries", "french fries"},
 		{"boneless, skinless chicken thighs", "chicken thigh"},
 		{"chicken thighs, boneless", "chicken thigh"},
 		{"coriander leaves", "cilantro"},

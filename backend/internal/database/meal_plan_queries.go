@@ -230,6 +230,24 @@ func (q *Queries) ListEatenRecipeIDs(ctx context.Context) (map[int]bool, error) 
 	return eaten, rows.Err()
 }
 
+// SwapPlanRecipe replaces an uncooked dinner with another recipe in place,
+// keeping its servings and position. It returns pgx.ErrNoRows when oldID is
+// not an uncooked dinner of the plan.
+func (q *Queries) SwapPlanRecipe(ctx context.Context, planID, oldID, newID int) error {
+	tag, err := q.pool.Exec(ctx, `
+		UPDATE meal_plan_recipes
+		SET recipe_id = $3, skipped = FALSE, rating = NULL, completed_at = NULL
+		WHERE meal_plan_id = $1 AND recipe_id = $2 AND completed = FALSE`,
+		planID, oldID, newID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
 func (q *Queries) ReplacePlanRecipes(ctx context.Context, planID int, recipeIDs []int, servings []int) error {
 	tx, err := q.pool.Begin(ctx)
 	if err != nil {

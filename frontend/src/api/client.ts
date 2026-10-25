@@ -172,6 +172,14 @@ export function randomizePlan(planId: number, servings: number[], excludedIds: n
   });
 }
 
+/** Swaps uncooked dinners for new recommendations, keeping their servings. */
+export function replacePlanRecipes(planId: number, recipeIds: number[], excludedIds: number[] = []) {
+  return request<MealPlan>(`/plans/${planId}/replace`, {
+    method: 'POST',
+    body: { recipe_ids: recipeIds, excluded_ids: excludedIds },
+  });
+}
+
 export function orderPlanAH(planId: number) {
   return request<AHOrderResult>(`/plans/${planId}/order/ah`, { method: 'POST' });
 }

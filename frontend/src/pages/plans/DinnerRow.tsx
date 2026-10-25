@@ -14,9 +14,12 @@ interface DinnerRowProps {
   onSkip: (skipped: boolean) => void;
   onRemove: () => void;
   onRate: (rating: number) => void;
+  /** Set when the dinner can be ticked for replacement. */
+  selected?: boolean;
+  onSelect?: (selected: boolean) => void;
 }
 
-export default function DinnerRow({ dinner, status, onServings, onComplete, onSkip, onRemove, onRate }: DinnerRowProps) {
+export default function DinnerRow({ dinner, status, onServings, onComplete, onSkip, onRemove, onRate, selected, onSelect }: DinnerRowProps) {
   const { recipe, completed, skipped } = dinner;
   const minutes = recipe.prep_time_minutes + recipe.cook_time_minutes;
   const open = !completed && !skipped;
@@ -30,7 +33,13 @@ export default function DinnerRow({ dinner, status, onServings, onComplete, onSk
   if (status !== 'completed') menu.push({ label: 'Remove from plan', danger: true, onSelect: onRemove });
 
   return (
-    <article className={`dinner-row${skipped ? ' dinner-row-skipped' : ''}`}>
+    <article className={`dinner-row${skipped ? ' dinner-row-skipped' : ''}${selected ? ' dinner-row-selected' : ''}`}>
+      {onSelect && (
+        <label className="dinner-row-select">
+          <input type="checkbox" checked={!!selected} onChange={e => onSelect(e.target.checked)} />
+          <span className="visually-hidden">Select {recipe.title} to replace</span>
+        </label>
+      )}
       {recipe.image_url
         ? <img className="dinner-row-img" src={recipe.image_url} alt="" loading="lazy" />
         : <div className="dinner-row-img dinner-row-img-empty" aria-hidden="true"><UtensilsCrossed size={28} /></div>}

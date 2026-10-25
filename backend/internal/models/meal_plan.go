@@ -74,6 +74,13 @@ type RandomizeRequest struct {
 	ExcludedIDs []int `json:"excluded_ids,omitempty"`
 }
 
+// ReplaceRecipesRequest swaps uncooked dinners for new recommendations.
+// ExcludedIDs are never suggested (e.g. dinners replaced earlier in the session).
+type ReplaceRecipesRequest struct {
+	RecipeIDs   []int `json:"recipe_ids"`
+	ExcludedIDs []int `json:"excluded_ids,omitempty"`
+}
+
 type AggregatedIngredient struct {
 	Name    string   `json:"name"`
 	Amount  float64  `json:"amount"`

@@ -288,3 +288,24 @@
   .dinner-row-img { width: 72px; height: 72px; }
   .dinner-row-side { width: 100%; justify-content: flex-end; }
 }
+
+/* Replacing selected dinners */
+.dinner-row-select { display: flex; align-items: center; justify-content: center; width: 32px; height: 44px; flex: none; cursor: pointer; }
+.dinner-row-select input { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.dinner-row-selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.replace-bar {
+  position: sticky;
+  top: 76px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  font-weight: 600;
+}
+@media (max-width: 720px) { .replace-bar { top: 64px; } }
