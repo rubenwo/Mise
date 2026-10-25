@@ -46,7 +46,7 @@ func TestBuildGeneratePrompt(t *testing.T) {
 		DietaryRestrictions: []string{"vegan"},
 		AdditionalNotes:     "  spicy  ",
 	}, nil)
-	for _, want := range []string{"Thai cuisine", `"servings" to 2`, "vegan", "The user also asked for: spicy"} {
+	for _, want := range []string{"Thai cuisine", `"servings" to 2`, "vegan", "The user also asked for: spicy", completeMealRequirement} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("prompt missing %q:\n%s", want, prompt)
 		}

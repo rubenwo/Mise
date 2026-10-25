@@ -254,6 +254,11 @@ func servingsRequirement(servings int) string {
 	return fmt.Sprintf("Exactly %d servings: set \"servings\" to %d and scale every amount to match.", servings, servings)
 }
 
+// completeMealRequirement keeps generated dinners shoppable as-is: without it
+// models often write just the main dish, leaving the user to work out sides
+// while ordering groceries.
+const completeMealRequirement = "A complete, balanced dinner: protein, a starch (rice, potatoes, pasta, noodles, bread or grains) and at least 125 g of vegetables per serving. If the dish is traditionally served with sides, such as rice or a vegetable, include them in the ingredients and steps."
+
 // BuildGeneratePrompt builds the user prompt for a single generation.
 // Tool guidance and avoid-titles live in the system prompt.
 func BuildGeneratePrompt(req models.GenerateRequest, cuisineCounts map[string]int) string {
@@ -269,7 +274,7 @@ func BuildGeneratePrompt(req models.GenerateRequest, cuisineCounts map[string]in
 	}
 	sb.WriteString(".")
 
-	var reqs []string
+	reqs := []string{completeMealRequirement}
 	if req.Servings > 0 {
 		reqs = append(reqs, servingsRequirement(req.Servings))
 	}
@@ -306,6 +311,7 @@ func BuildBackgroundGeneratePrompt(targetCuisine string, allCuisines []string, i
 		sb.WriteString("Create a dinner recipe.")
 	}
 	sb.WriteString("\n\nRequirements:\n- " + servingsRequirement(servings))
+	sb.WriteString("\n- " + completeMealRequirement)
 	if len(allCuisines) > 0 {
 		sb.WriteString("\n- cuisine_type must be one of: " + strings.Join(allCuisines, ", ") + ".")
 	}
