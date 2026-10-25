@@ -1,0 +1,125 @@
+/* ── Generation progress ────────────────────────────────────────────────── */
+.generation-progress {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  padding: 22px;
+  margin-bottom: 28px;
+  border: 1px solid var(--border);
+}
+.generation-progress.collapsed { padding-bottom: 22px; }
+
+.progress-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  line-height: inherit;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.progress-header h3 { margin-bottom: 0; flex: 1; }
+.progress-toggle { font-size: 12px; color: var(--text-secondary); margin-left: auto; }
+.generation-progress:not(.collapsed) .progress-header { margin-bottom: 16px; }
+
+.loading-dots { display: inline-flex; gap: 4px; align-items: center; }
+.loading-dots span {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text);
+  animation: pulse-dot 1.4s ease-in-out infinite;
+}
+.loading-dots span:nth-child(2) { animation-delay: 0.2s; }
+.loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes pulse-dot {
+  0%, 80%, 100% { opacity: 0.25; transform: scale(0.8); }
+  40% { opacity: 1; transform: scale(1); }
+}
+
+.events-list { display: flex; flex-direction: column; gap: 4px; max-height: 300px; overflow-y: auto; }
+.event {
+  font-size: 12px;
+  padding: 7px 12px;
+  border-radius: 6px;
+  background: var(--bg-elev);
+  border-left: 2px solid var(--border-strong);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+.event-error { background: var(--danger-soft); color: var(--danger); border-left-color: var(--danger); }
+.event-tool_call { border-left-color: var(--accent); }
+.event-tool_result { border-left-color: var(--success); }
+.event-status { border-left-color: var(--warning); }
+.event-slot-label { font-size: 10px; font-weight: 700; margin-right: 6px; opacity: 0.85; flex-shrink: 0; }
+
+/* ── Review panel ───────────────────────────────────────────────────────── */
+.review-panel { margin-top: 0; }
+.review-item {
+  position: relative;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  margin-bottom: 14px;
+  border: 1px solid var(--border);
+  transition: box-shadow var(--motion-medium);
+}
+.review-item:hover { box-shadow: var(--shadow); }
+.review-dismiss {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 50%;
+  font-size: 16px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--motion-quick);
+}
+.review-dismiss:hover { background: var(--danger-soft); border-color: var(--danger); color: var(--danger); }
+.near-duplicate-warning {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+  background: var(--warning-soft);
+  border: 1px solid var(--warning);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--warning);
+}
+.near-duplicate-icon { font-size: 14px; flex-shrink: 0; }
+.near-duplicate-warning a { color: var(--warning); font-weight: 600; text-decoration: underline; }
+.near-duplicate-warning a:hover { color: var(--text); }
+.review-actions { display: flex; align-items: center; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
+.refine-section { display: flex; gap: 8px; flex: 1; min-width: 200px; }
+.refine-section input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: var(--font-body);
+  background: var(--surface);
+  color: var(--text);
+  transition: border-color var(--motion-quick), box-shadow var(--motion-quick);
+}
+.refine-section input:focus { outline: none; border-color: var(--text); box-shadow: 0 0 0 3px var(--primary-soft); }
+.saved-badge { color: var(--success); font-weight: 600; font-size: 13px; }

@@ -1,0 +1,48 @@
+/* ── Generate layout ────────────────────────────────────────────────────── */
+.generate-page { max-width: 1280px; margin: 0 auto; }
+.generate-layout {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 32px;
+  align-items: start;
+}
+.generate-left { position: sticky; top: 80px; }
+@media (max-width: 900px) {
+  .generate-layout { grid-template-columns: 1fr; }
+  .generate-left { position: static; }
+}
+
+.generate-form {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  padding: 28px;
+  border: 1px solid var(--border);
+}
+
+.mode-toggle {
+  display: flex;
+  margin-bottom: 24px;
+  background: var(--bg-elev);
+  border-radius: 8px;
+  padding: 3px;
+  border: 1px solid var(--border);
+}
+.mode-toggle button {
+  flex: 1;
+  padding: 7px 14px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 6px;
+  transition: all var(--motion-quick);
+  color: var(--text-secondary);
+}
+.mode-toggle button.active {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
+}

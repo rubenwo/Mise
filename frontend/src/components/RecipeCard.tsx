@@ -1,5 +1,6 @@
 import { useState, useEffect, useEffectEvent, useRef, type MouseEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { Clock, Flame, Star, Users, UtensilsCrossed } from 'lucide-react';
 import { fetchRecipeImage, previewImageByTitle } from '../api/client';
 import { useInventory } from '../hooks/useInventory';
 import { useEatCounts } from '../hooks/useEatCounts';
@@ -78,9 +79,9 @@ export default function RecipeCard({ recipe, showLink = false, showIngredients =
       </div>
       <p className="recipe-description">{recipe.description}</p>
       <div className="recipe-meta">
-        {recipe.prep_time_minutes > 0 && <span>{'\u23F1'} Prep: {recipe.prep_time_minutes}m</span>}
-        {recipe.cook_time_minutes > 0 && <span>{'\uD83D\uDD25'} Cook: {recipe.cook_time_minutes}m</span>}
-        <span>{'\uD83C\uDF7D'} Servings: {recipe.servings}</span>
+        {recipe.prep_time_minutes > 0 && <span className="meta-item"><Clock size={14} aria-hidden="true" />Prep {recipe.prep_time_minutes} min</span>}
+        {recipe.cook_time_minutes > 0 && <span className="meta-item"><Flame size={14} aria-hidden="true" />Cook {recipe.cook_time_minutes} min</span>}
+        <span className="meta-item"><Users size={14} aria-hidden="true" />Serves {recipe.servings}</span>
         {recipe.difficulty && <span className={`difficulty difficulty-${recipe.difficulty}`}>{recipe.difficulty}</span>}
         {summary && (
           <span className={`stock-badge ${summary.missing === 0 ? 'stock-badge-all' : summary.inStock === 0 ? 'stock-badge-none' : 'stock-badge-partial'}`}>
@@ -93,9 +94,9 @@ export default function RecipeCard({ recipe, showLink = false, showIngredients =
               ? `Last cooked ${new Date(stats.last_cooked_at).toLocaleDateString()}`
               : `Cooked ${stats.count}×`
           }>
-            {'🍽'} {stats.count}{stats.count === 1 ? '' : '×'}
+            <UtensilsCrossed size={12} aria-hidden="true" /> {stats.count}{stats.count === 1 ? '' : '×'}
             {stats.avg_rating != null && (
-              <span className="eat-badge-rating"> · ⭐ {stats.avg_rating.toFixed(1)}</span>
+              <span className="eat-badge-rating"> · <Star size={12} aria-hidden="true" /> {stats.avg_rating.toFixed(1)}</span>
             )}
           </span>
         )}

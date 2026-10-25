@@ -1,0 +1,83 @@
+/* ── Buttons ────────────────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0;
+  cursor: pointer;
+  transition: background var(--motion-quick), border-color var(--motion-quick), color var(--motion-quick), transform var(--motion-quick);
+  background: var(--surface);
+  color: var(--text);
+  text-decoration: none;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.btn:hover { background: var(--bg-elev); border-color: var(--text-muted); }
+.btn:active { transform: scale(0.98); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+.btn-primary {
+  background: var(--primary);
+  color: var(--text-on-primary);
+  border-color: var(--primary);
+}
+.btn-primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+.btn-secondary { background: var(--surface); color: var(--text); }
+.btn-secondary:hover { background: var(--bg-elev); }
+.btn-danger {
+  color: var(--danger);
+  background: var(--surface);
+  border-color: var(--border-strong);
+}
+.btn-danger:hover { background: var(--danger-soft); border-color: var(--danger); color: var(--danger-hover); }
+.btn-sm { min-height: 32px; padding: 4px 10px; font-size: 13px; }
+.btn-link {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--border-strong);
+  padding: 0;
+  transition: text-decoration-color var(--motion-quick);
+}
+.btn-link:hover { text-decoration-color: var(--text); }
+
+/* ── Tabs (segmented control) ───────────────────────────────────────────── */
+.add-recipe-tabs {
+  display: flex;
+  margin-bottom: 28px;
+  background: var(--bg-elev);
+  border-radius: 8px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  width: fit-content;
+}
+.add-recipe-tab {
+  padding: 7px 18px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 6px;
+  transition: all var(--motion-quick);
+  color: var(--text-secondary);
+}
+.add-recipe-tab.active {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
+}

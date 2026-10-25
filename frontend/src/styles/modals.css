@@ -1,0 +1,108 @@
+/* ── Library page header ────────────────────────────────────────────────── */
+.library-page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.library-page-header h2 { margin: 0; }
+
+/* ── Modals ─────────────────────────────────────────────────────────────── */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  backdrop-filter: blur(4px);
+}
+.dedup-modal {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  width: 100%;
+  max-width: 900px;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.dedup-modal-body { padding: 22px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 24px; }
+.dedup-modal-hint { font-size: 13px; color: var(--text-secondary); margin: 0 0 4px; }
+.dedup-group { display: flex; flex-direction: column; gap: 10px; }
+.dedup-group-label { font-family: var(--font-body); font-size: 12px; font-weight: 600; color: var(--text-secondary); letter-spacing: 0; text-transform: none; }
+.dedup-group-cards { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 4px; }
+.dedup-card {
+  flex: 0 0 220px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color var(--motion-quick), box-shadow var(--motion-quick);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+}
+.dedup-card:hover { border-color: var(--text); box-shadow: var(--shadow); }
+.dedup-card--selected { border-color: var(--danger); }
+.dedup-card-img { width: 100%; height: 120px; object-fit: cover; background: var(--bg-elev); }
+.dedup-card-body { padding: 10px 12px; flex: 1; display: flex; flex-direction: column; gap: 6px; }
+.dedup-card-title { font-size: 14px; font-weight: 600; line-height: 1.3; }
+.dedup-card-desc { font-size: 12px; color: var(--text-secondary); margin: 0; line-height: 1.4; }
+.dedup-card-meta { display: flex; flex-wrap: wrap; gap: 4px; }
+.dedup-card-ingredients { font-size: 11px; color: var(--text-muted); margin: 0; }
+.dedup-card-date { font-size: 11px; color: var(--text-muted); margin: 0; margin-top: auto; padding-top: 4px; }
+.dedup-card-checkbox { padding: 8px 12px; font-size: 12px; font-weight: 600; text-align: center; background: var(--bg-elev); color: var(--text-secondary); transition: background var(--motion-quick), color var(--motion-quick); }
+.dedup-card--selected .dedup-card-checkbox { background: var(--danger); color: #fff; }
+.dedup-modal .modal-footer { padding: 16px 22px; margin-top: 0; }
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  backdrop-filter: blur(4px);
+}
+.modal {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  width: 100%;
+  max-width: 600px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.modal-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 22px 16px; border-bottom: 1px solid var(--border); }
+.modal-header h3 { margin: 0; font-size: 17px; font-weight: 600; }
+.modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--text-secondary); line-height: 1; padding: 2px 6px; border-radius: 4px; }
+.modal-close:hover { background: var(--bg-elev); color: var(--text); }
+.modal-body { padding: 22px; overflow-y: auto; flex: 1; }
+.modal-intro { font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; }
+.modal-error { color: var(--danger); font-size: 13px; margin-bottom: 12px; }
+.modal-loading { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 40px 20px; }
+.modal-footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+
+/* ── AH order results ───────────────────────────────────────────────────── */
+.ah-not-found { margin-bottom: 20px; background: var(--warning-soft); border: 1px solid transparent; border-left: 3px solid var(--warning); border-radius: 8px; padding: 14px 16px; }
+.ah-not-found h4 { font-family: var(--font-body); font-size: 13px; font-weight: 600; color: var(--warning); margin-bottom: 6px; }
+.ah-not-found-hint { font-size: 12px; color: var(--text-secondary); margin-bottom: 10px; }
+.ah-not-found-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.ah-not-found-list li { display: flex; align-items: center; justify-content: space-between; font-size: 13px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+.ah-not-found-list li:last-child { border-bottom: none; }
+.ah-not-found-name { font-weight: 600; }
+.ah-not-found-amount { color: var(--text-secondary); font-size: 12px; }
+.ah-matched h4 { font-family: var(--font-body); font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+.ah-matched-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.ah-product { display: flex; align-items: center; gap: 12px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-elev); }
+.ah-product-img { width: 48px; height: 48px; object-fit: contain; border-radius: 4px; flex-shrink: 0; background: white; }
+.ah-product-info { flex: 1; min-width: 0; }
+.ah-product-title { display: block; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ah-product-sub { display: block; font-size: 11px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ah-product-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
+.ah-product-price { font-size: 13px; font-weight: 700; color: var(--text); }

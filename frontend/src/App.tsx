@@ -26,6 +26,7 @@ export default function App() {
       <Layout pendingCount={pendingCount}>
         <Routes>
           <Route path="/" element={<PendingPage onCountChange={setPendingCount} />} />
+          <Route path="/pending" element={<PendingPage onCountChange={setPendingCount} />} />
           <Route path="/generate" element={<Navigate to="/recipe/new?mode=generate" replace />} />
           <Route path="/import" element={<Navigate to="/recipe/new?mode=import" replace />} />
           <Route path="/library" element={<LibraryPage />} />

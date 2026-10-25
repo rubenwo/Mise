@@ -1,0 +1,132 @@
+/* ── Cooking chat ───────────────────────────────────────────────────────── */
+.cooking-chat { border-top: 1px solid var(--border); padding: 26px 28px 28px; }
+.cooking-chat h3 {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 16px;
+  letter-spacing: -0.01em;
+}
+
+.chat-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 380px;
+  overflow-y: auto;
+  padding: 16px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+  scroll-behavior: smooth;
+}
+
+.chat-empty { font-size: 13px; color: var(--text-muted); font-style: italic; text-align: center; padding: 18px 0; }
+
+.chat-message { display: flex; flex-direction: column; max-width: 80%; gap: 3px; }
+.chat-message-user { align-self: flex-end; align-items: flex-end; }
+.chat-message-assistant { align-self: flex-start; align-items: flex-start; }
+
+.chat-role { font-family: var(--font-body); font-size: 11px; font-weight: 600; letter-spacing: 0; text-transform: lowercase; color: var(--text-muted); padding: 0 4px; }
+
+.chat-bubble {
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 14px;
+  line-height: 1.55;
+  word-break: break-word;
+}
+.chat-message-user .chat-bubble { background: var(--text); color: var(--surface); border-bottom-right-radius: 4px; }
+.chat-message-assistant .chat-bubble { background: var(--surface); border: 1px solid var(--border); color: var(--text); border-bottom-left-radius: 4px; }
+
+.chat-bubble p { margin: 0 0 6px; white-space: pre-wrap; }
+.chat-bubble p:last-child { margin-bottom: 0; }
+.chat-bubble strong { font-weight: 600; }
+.chat-bubble em { font-style: italic; }
+.chat-bubble ul, .chat-bubble ol { margin: 4px 0 6px 18px; padding: 0; }
+.chat-bubble li { margin-bottom: 2px; }
+.chat-bubble h1, .chat-bubble h2, .chat-bubble h3,
+.chat-bubble h4, .chat-bubble h5, .chat-bubble h6 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  margin: 8px 0 4px;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+.chat-bubble h1 { font-size: 17px; }
+.chat-bubble h2, .chat-bubble h3 { font-size: 15px; }
+.chat-bubble h4, .chat-bubble h5, .chat-bubble h6 { font-size: 14px; }
+.chat-bubble code {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+.chat-message-user .chat-bubble code { background: rgba(255, 255, 255, 0.18); }
+.chat-bubble pre {
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 6px;
+  padding: 8px 10px;
+  overflow-x: auto;
+  margin: 6px 0;
+}
+.chat-bubble pre code { background: none; padding: 0; }
+
+.chat-thinking { color: var(--text-muted) !important; font-style: italic; }
+
+.chat-input-form { display: flex; gap: 8px; }
+.chat-input {
+  flex: 1;
+  padding: 10px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  background: var(--surface);
+  color: var(--text);
+  transition: border-color var(--motion-quick), box-shadow var(--motion-quick);
+}
+.chat-input:focus { outline: none; border-color: var(--text); box-shadow: 0 0 0 2px var(--primary-soft); }
+.chat-input:disabled { opacity: 0.6; }
+.chat-input-form .btn { flex-shrink: 0; }
+
+/* ── Library recommend chat ─────────────────────────────────────────────── */
+.library-recommend-chat {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px 22px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.library-recommend-chat-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.library-recommend-hint {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+  flex: 1;
+}
+.library-recommend-messages {
+  min-height: 80px;
+  max-height: none;
+}
+.library-recommend-messages .chat-message {
+  max-width: 100%;
+}
+.library-recommend-results {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+  width: 100%;
+}

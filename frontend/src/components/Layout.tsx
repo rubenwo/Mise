@@ -1,55 +1,85 @@
-import { useState, type ReactNode } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import type { ReactNode } from 'react';
+import { Link, NavLink } from 'react-router-dom';
+import { BookOpen, CalendarDays, Inbox, Package, Plus, Settings, type LucideIcon } from 'lucide-react';
 
 interface LayoutProps {
   children: ReactNode;
   pendingCount?: number;
 }
 
+interface NavItem {
+  to: string;
+  label: string;
+  icon: LucideIcon;
+}
+
+const NAV_ITEMS: NavItem[] = [
+  { to: '/plans', label: 'Plans', icon: CalendarDays },
+  { to: '/library', label: 'Library', icon: BookOpen },
+  { to: '/inventory', label: 'Pantry', icon: Package },
+];
+
+function Logo() {
+  return (
+    <Link to="/" className="logo">
+      <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true">
+        <circle cx="11" cy="11" r="10" fill="var(--tomato)" />
+        <path d="M11 3c1.5 2 1.5 4 0 6" stroke="#fff" strokeWidth="1.6" fill="none" strokeLinecap="round" />
+      </svg>
+      Mise
+    </Link>
+  );
+}
+
+function InboxLink({ pendingCount, className }: { pendingCount: number; className: string }) {
+  const label = pendingCount > 0 ? `${pendingCount} recipes waiting for review` : 'Recipes to review';
+  return (
+    <NavLink to="/pending" className={className} aria-label={label} title={label}>
+      <Inbox size={22} strokeWidth={1.8} aria-hidden="true" />
+      {pendingCount > 0 && <span className="nav-badge">{pendingCount}</span>}
+    </NavLink>
+  );
+}
+
 export default function Layout({ children, pendingCount = 0 }: LayoutProps) {
-  const location = useLocation();
-  const [menuOpen, setMenuOpen] = useState(false);
-
-  const closeMenu = () => setMenuOpen(false);
-
   return (
     <div className="app">
-      {menuOpen && <div className="nav-overlay" onClick={closeMenu} aria-hidden="true" />}
       <header className="header">
-        <div className="header-content">
-          <Link to="/" className="logo" onClick={closeMenu}>
-            <svg width="28" height="22" viewBox="0 0 28 22" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-              <circle cx="10" cy="11" r="9" fill="#b5451b"/>
-              <circle cx="10" cy="11" r="9" stroke="rgba(255,252,248,0.5)" strokeWidth="1.5"/>
-              <circle cx="7.5" cy="8.5" r="2.5" fill="rgba(255,252,248,0.08)"/>
-              <path d="M19 9.5 L26.5 7.5 Q27.5 11 26.5 14.5 L19 12.5 Z" fill="rgba(255,252,248,0.85)" stroke="rgba(255,252,248,0.25)" strokeWidth="0.5"/>
-              <circle cx="21" cy="11" r="0.75" fill="#1c1510" opacity="0.4"/>
-              <circle cx="23.5" cy="11" r="0.75" fill="#1c1510" opacity="0.4"/>
-            </svg>
-            Mise
-          </Link>
-          <button
-            className={`nav-hamburger${menuOpen ? ' nav-hamburger-open' : ''}`}
-            onClick={() => setMenuOpen(o => !o)}
-            aria-label="Toggle menu"
-            aria-expanded={menuOpen}
-          >
-            <span /><span /><span />
-          </button>
-          <nav className={`nav${menuOpen ? ' nav-open' : ''}`}>
-            <Link to="/" className={`nav-pending-link ${location.pathname === '/' ? 'active' : ''}`} onClick={closeMenu}>
-              Pending
-              {pendingCount > 0 && <span className="nav-badge">{pendingCount}</span>}
+        <nav className="header-content" aria-label="Main">
+          <Logo />
+          <div className="nav">
+            {NAV_ITEMS.map(item => (
+              <NavLink key={item.to} to={item.to} className="nav-link">{item.label}</NavLink>
+            ))}
+          </div>
+          <div className="nav-actions">
+            <InboxLink pendingCount={pendingCount} className="nav-icon nav-desktop-only" />
+            <NavLink to="/settings" className="nav-icon" aria-label="Settings" title="Settings">
+              <Settings size={21} strokeWidth={1.8} aria-hidden="true" />
+            </NavLink>
+            <Link to="/recipe/new" className="btn btn-primary nav-new">
+              <Plus size={16} strokeWidth={2.2} aria-hidden="true" />
+              <span className="nav-new-label">New recipe</span>
             </Link>
-            <Link to="/recipe/new" className={location.pathname === '/recipe/new' ? 'active' : ''} onClick={closeMenu}>Add Recipe</Link>
-            <Link to="/inventory" className={location.pathname === '/inventory' ? 'active' : ''} onClick={closeMenu}>Inventory</Link>
-            <Link to="/plans" className={location.pathname.startsWith('/plans') ? 'active' : ''} onClick={closeMenu}>Plans</Link>
-            <Link to="/library" className={location.pathname === '/library' ? 'active' : ''} onClick={closeMenu}>Library</Link>
-            <Link to="/settings" className={location.pathname === '/settings' ? 'active' : ''} onClick={closeMenu}>Settings</Link>
-          </nav>
-        </div>
+          </div>
+        </nav>
       </header>
       <main className="main">{children}</main>
+      <nav className="tabbar" aria-label="Main">
+        {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
+          <NavLink key={to} to={to} className="tabbar-link">
+            <Icon size={22} strokeWidth={1.8} aria-hidden="true" />
+            {label}
+          </NavLink>
+        ))}
+        <NavLink to="/pending" className="tabbar-link">
+          <span className="tabbar-icon">
+            <Inbox size={22} strokeWidth={1.8} aria-hidden="true" />
+            {pendingCount > 0 && <span className="nav-badge">{pendingCount}</span>}
+          </span>
+          Review
+        </NavLink>
+      </nav>
     </div>
   );
 }

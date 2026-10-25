@@ -1,0 +1,176 @@
+/* ==========================================================================
+   Mise design tokens
+   ========================================================================== */
+
+/* ── Tokens ─────────────────────────────────────────────────────────────── */
+:root {
+  /* Surfaces */
+  --bg: #f7f6f2;
+  --bg-elev: #f1efea;
+  --surface: #ffffff;
+  --surface-2: #fbfaf7;
+  --overlay: rgba(20, 20, 18, 0.45);
+
+  /* Text */
+  --text: #161613;
+  --text-secondary: #5c5b54;
+  --text-muted: #6e6d66; /* 4.5:1 on --bg */
+  --text-on-primary: #ffffff;
+  --text-on-accent: #ffffff;
+
+  /* Lines */
+  --border: #e6e4dd;
+  --border-strong: #d9d6ce;
+
+  /* Strong action — near-black, the new "primary" */
+  --primary: #1a1a17;
+  --primary-hover: #000000;
+  --primary-soft: #f1efea;
+  --primary-light: #f1efea; /* legacy alias */
+
+  /* Accent — olive, for category/decorative use */
+  --accent: #4f6135;
+  --accent-hover: #3f4e2a;
+  --accent-soft: #ecefe2;
+  --accent-text: #3a4726;
+
+  /* Brand mark and ratings */
+  --tomato: #b4472a;
+  --tomato-text: #9a3c22;
+
+  /* States */
+  --danger: #b3261e;
+  --danger-hover: #8a1d18;
+  --danger-soft: #fdecec;
+  --success: #2d7d4f;
+  --success-soft: #e8f3eb;
+  --warning: #a86e1c;
+  --warning-soft: #fbf1e6;
+  --warning-text: #6b3a10;
+
+  /* Cuisine palette — a small, harmonious set used as chip dots */
+  --cuisine-1: #b04a2c;
+  --cuisine-2: #2f6b5a;
+  --cuisine-3: #6f4a8e;
+  --cuisine-4: #c08a2c;
+  --cuisine-5: #2a5e8a;
+  --cuisine-6: #4f7d3d;
+  --cuisine-7: #a83b5c;
+
+  /* Radius */
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-pill: 999px;
+
+  /* Elevation — quiet at rest, lift on hover */
+  --shadow-none: none;
+  --shadow-sm: 0 1px 2px rgba(14, 14, 12, 0.04);
+  --shadow: 0 1px 2px rgba(14, 14, 12, 0.04), 0 4px 12px rgba(14, 14, 12, 0.04);
+  --shadow-lg: 0 4px 16px rgba(14, 14, 12, 0.08), 0 12px 32px rgba(14, 14, 12, 0.06);
+
+  /* Motion */
+  --motion-quick: 120ms cubic-bezier(0.2, 0, 0, 1);
+  --motion-medium: 240ms cubic-bezier(0.2, 0, 0, 1);
+  --motion-slow: 380ms cubic-bezier(0.2, 0, 0, 1);
+
+  /* Type */
+  --font-display: 'Fraunces Variable', Georgia, 'Times New Roman', serif;
+  --font-body: 'Inter Variable', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, monospace;
+
+  color-scheme: light;
+}
+
+/* Dark mode — system preference unless user has chosen light */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f0f0e;
+    --bg-elev: #18181a;
+    --surface: #18181a;
+    --surface-2: #1f1f1d;
+    --overlay: rgba(0, 0, 0, 0.65);
+
+    --text: #f1f0ec;
+    --text-secondary: #a8a8a0;
+    --text-muted: #6e6e66;
+    --text-on-primary: #0f0f0e;
+    --text-on-accent: #0f0f0e;
+
+    --border: #2a2a26;
+    --border-strong: #3c3c36;
+
+    --primary: #f1f0ec;
+    --primary-hover: #ffffff;
+    --primary-soft: #232320;
+    --primary-light: #232320;
+
+    --accent: #a3b67a;
+    --accent-hover: #b6c98c;
+    --accent-soft: #232a18;
+    --accent-text: #c8d4a8;
+
+    --danger: #e96b62;
+    --danger-hover: #f08a82;
+    --danger-soft: #2a1817;
+    --success: #6cb88a;
+    --success-soft: #18241c;
+    --warning: #d29554;
+    --warning-soft: #2a1f10;
+    --warning-text: #e9b98a;
+    --tomato: #e0745a;
+    --tomato-text: #eb8f78;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.5), 0 12px 32px rgba(0, 0, 0, 0.4);
+
+    color-scheme: dark;
+  }
+}
+
+/* Manual override */
+:root[data-theme="dark"] {
+  --bg: #0f0f0e;
+  --bg-elev: #18181a;
+  --surface: #18181a;
+  --surface-2: #1f1f1d;
+  --overlay: rgba(0, 0, 0, 0.65);
+
+  --text: #f1f0ec;
+  --text-secondary: #a8a8a0;
+  --text-muted: #6e6e66;
+  --text-on-primary: #0f0f0e;
+  --text-on-accent: #0f0f0e;
+
+  --border: #2a2a26;
+  --border-strong: #3c3c36;
+
+  --primary: #f1f0ec;
+  --primary-hover: #ffffff;
+  --primary-soft: #232320;
+  --primary-light: #232320;
+
+  --accent: #a3b67a;
+  --accent-hover: #b6c98c;
+  --accent-soft: #232a18;
+  --accent-text: #c8d4a8;
+
+  --danger: #e96b62;
+  --danger-hover: #f08a82;
+  --danger-soft: #2a1817;
+  --success: #6cb88a;
+  --success-soft: #18241c;
+  --warning: #d29554;
+  --warning-soft: #2a1f10;
+    --warning-text: #e9b98a;
+    --tomato: #e0745a;
+    --tomato-text: #eb8f78;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.5), 0 12px 32px rgba(0, 0, 0, 0.4);
+
+  color-scheme: dark;
+}

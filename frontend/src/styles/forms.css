@@ -1,0 +1,55 @@
+/* ── Forms ──────────────────────────────────────────────────────────────── */
+.form-group { margin-bottom: 18px; }
+.form-group > label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 6px;
+  color: var(--text);
+}
+.form-group select,
+.form-group input:not([type="checkbox"]),
+.form-group textarea {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: var(--font-body);
+  background: var(--surface);
+  color: var(--text);
+  transition: border-color var(--motion-quick), box-shadow var(--motion-quick);
+}
+.form-group select:focus,
+.form-group input:not([type="checkbox"]):focus,
+.form-group textarea:focus {
+  outline: none;
+  border-color: var(--text);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+.form-group textarea { resize: vertical; min-height: 90px; }
+
+.checkbox-group { display: flex; flex-wrap: wrap; gap: 6px; }
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 5px 11px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+  transition: all var(--motion-quick);
+}
+.checkbox-label:hover { background: var(--bg-elev); border-color: var(--border-strong); color: var(--text); }
+.checkbox-label input[type="checkbox"] { accent-color: var(--text); width: 14px; height: 14px; }
+
+.generate-form .btn-primary {
+  width: 100%;
+  padding: 11px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  margin-top: 4px;
+}
