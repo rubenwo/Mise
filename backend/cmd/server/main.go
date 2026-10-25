@@ -131,6 +131,10 @@ func main() {
 	generateHandler := handlers.NewGenerateHandler(orchestrator, queries)
 	// Recommendations: embeds recipes via an "embedding"-tagged provider and
 	// clusters the library into flavour families for "New to you" picks.
+	// Remove dietary labels the ingredients contradict (e.g. gluten-free with
+	// soy sauce) from recipes saved before generation checked for it.
+	go llm.SweepDietaryLabels(ctx, queries)
+
 	recommender := recommend.NewService(queries, clientPool)
 	recommender.Start(ctx)
 	recommendationHandler := handlers.NewRecommendationHandler(queries, recommender)

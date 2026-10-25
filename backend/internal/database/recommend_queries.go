@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/rubenwo/mise/internal/models"
 )
 
 // RecommendRecipe is a recipe as the recommender and embedder need it.
@@ -189,4 +191,36 @@ func (q *Queries) ListFavouriteRecipeIDs(ctx context.Context, minRating float64)
 		ids = append(ids, id)
 	}
 	return ids, rows.Err()
+}
+
+// ListRecipesForDietaryCheck returns every recipe's title, dietary labels and
+// ingredients — just what the dietary-label sweep needs.
+func (q *Queries) ListRecipesForDietaryCheck(ctx context.Context) ([]models.Recipe, error) {
+	rows, err := q.pool.Query(ctx, "SELECT id, title, dietary_restrictions, ingredients FROM recipes")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []models.Recipe
+	for rows.Next() {
+		var r models.Recipe
+		var ingredientsJSON []byte
+		if err := rows.Scan(&r.ID, &r.Title, &r.DietaryRestrictions, &ingredientsJSON); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(ingredientsJSON, &r.Ingredients); err != nil {
+			return nil, fmt.Errorf("recipe %d ingredients: %w", r.ID, err)
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// SetRecipeDietary replaces a recipe's dietary labels.
+func (q *Queries) SetRecipeDietary(ctx context.Context, recipeID int, labels []string) error {
+	if labels == nil {
+		labels = []string{}
+	}
+	_, err := q.pool.Exec(ctx, "UPDATE recipes SET dietary_restrictions = $2 WHERE id = $1", recipeID, labels)
+	return err
 }

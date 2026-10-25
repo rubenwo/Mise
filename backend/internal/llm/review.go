@@ -197,4 +197,7 @@ func applyDeterministicReview(recipe *models.Recipe) {
 			log.Printf("Review: ingredient %q may not be referenced in instructions", ing.Name)
 		}
 	}
+
+	// 4. Drop dietary labels the ingredients contradict.
+	DropContradictedDiets(recipe)
 }
