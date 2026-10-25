@@ -158,6 +158,15 @@ func PickLeastRepresentedCuisine(counts map[string]int) string {
 	})
 }
 
+// Allowed values for recipe fields. RecipeSchema enforces them on structured
+// calls; the system prompt lists the same values (checked by a test) for the
+// free-form final turn of tool-assisted generation.
+var (
+	RecipeUnits   = []string{"g", "kg", "ml", "l", "tsp", "tbsp", "clove", "stalk", ""}
+	DietaryLabels = []string{"vegetarian", "vegan", "gluten-free", "dairy-free", "keto", "paleo"}
+	RecipeTags    = []string{"high-protein", "low-carb", "omega-3", "low-calorie", "high-fiber", "meal-prep", "quick", "budget-friendly", "one-pot", "freezer-friendly"}
+)
+
 // systemPrompt holds the recipe-writing rules shared by every recipe call.
 // It deliberately does not say "dinner": imports and refinements may be any
 // kind of dish. Generation prompts add the dinner requirement themselves.
@@ -189,6 +198,7 @@ Writing rules:
 - title: the dish's common name, not a marketing phrase.
 - description: one sentence on what makes the dish appealing.
 - ingredients: every ingredient the instructions use, including cooking oil, salt and water. Amounts must match "servings".
+- ingredient name: the product as you would buy it, lowercase and singular ("egg", "chicken thigh", "red onion"). Put preparation and size in notes ("hard-boiled", "finely chopped"). One product per entry: salt and black pepper are two ingredients.
 - instructions: 4-10 steps in cooking order, one or two sentences each, without step numbers. Give heat levels, times and doneness cues ("until golden, about 5 minutes").
 - prep_time_minutes and cook_time_minutes: realistic estimates for a home cook.
 - difficulty: "easy", "medium" or "hard".
@@ -196,8 +206,9 @@ Writing rules:
 - tags: 1-3 that truly apply, from: high-protein, low-carb, omega-3, low-calorie, high-fiber, meal-prep, quick, budget-friendly, one-pot, freezer-friendly.
 
 Units:
-- Metric only: g, kg, ml, l. Use tsp or tbsp for spices and small amounts of liquid.
-- Whole items (onion, egg, tomato, bell pepper, lemon) use unit "" with a count. Garlic uses "clove".
+- "unit" is one of: g, kg, ml, l, tsp, tbsp, clove, stalk, or "". Never cm, slice, cup, pinch or handful.
+- Use g or ml for most ingredients, and tsp or tbsp for spices and small amounts of liquid.
+- Whole items (onion, egg, tomato, bell pepper, lemon, tortilla, bread slice) use unit "" with a count. Garlic uses "clove"; celery and lemongrass use "stalk". Fresh ginger is weighed in g.
 - "amount" is always a single number (use 0.5, not "1/2" or "1-2").
 - For seasoning to taste, give a sensible starting amount and put "to taste" in notes.
 

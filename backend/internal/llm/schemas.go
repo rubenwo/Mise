@@ -93,7 +93,7 @@ func RecipeSchema(cuisines []string) *Schema {
 	ingredient := optionalObject([]string{"name", "amount", "unit"},
 		prop{"name", str},
 		prop{"amount", num},
-		prop{"unit", str},
+		prop{"unit", enum(RecipeUnits...)},
 		prop{"notes", str},
 	)
 	return mustSchema("recipe", object(
@@ -106,8 +106,8 @@ func RecipeSchema(cuisines []string) *Schema {
 		prop{"difficulty", enum("easy", "medium", "hard")},
 		prop{"ingredients", arrayOf(ingredient, 3)},
 		prop{"instructions", arrayOf(str, 3)},
-		prop{"dietary_restrictions", arrayOf(str, 0)},
-		prop{"tags", arrayOf(str, 0)},
+		prop{"dietary_restrictions", arrayOf(enum(DietaryLabels...), 0)},
+		prop{"tags", arrayOf(enum(RecipeTags...), 0)},
 	))
 }
 
@@ -134,10 +134,12 @@ var ScanSchema = mustSchema("scan", object(
 	), 0)},
 ))
 
-// RankSchema constrains the library recommendation ranking reply.
+// RankSchema constrains the library recommendation ranking reply. The
+// explanation comes first so the model weighs the candidates before it
+// commits to IDs.
 var RankSchema = mustSchema("rank", object(
-	prop{"recipe_ids", arrayOf(integer, 0)},
 	prop{"explanation", str},
+	prop{"recipe_ids", arrayOf(integer, 0)},
 ))
 
 // TranslationSchema constrains a single supermarket-term translation.

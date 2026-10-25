@@ -78,6 +78,16 @@ func TestBuildRefinePrompt_EmbedsRecipeAsJSON(t *testing.T) {
 	}
 }
 
+func TestSystemPromptListsAllowedValues(t *testing.T) {
+	for _, list := range [][]string{RecipeUnits, DietaryLabels, RecipeTags} {
+		for _, v := range list {
+			if v != "" && !strings.Contains(systemPrompt, v) {
+				t.Errorf("system prompt does not mention allowed value %q", v)
+			}
+		}
+	}
+}
+
 func TestSchemasAreValidJSON(t *testing.T) {
 	for _, s := range []*Schema{RecipeSchema(nil), RecipeSchema([]string{"Thai"}), DedupSchema, ScanSchema, RankSchema} {
 		var v map[string]any

@@ -30,7 +30,7 @@ Prefer broad searches that return many candidates — the ranking step picks the
 const recommendRankPromptHeader = `You are recommending recipes from the user's library. Pick the %d recipes from the candidate list that best fit the user's request, judging by their description, ingredients, cuisine, dietary fit, and time. If fewer than %d candidates are a good fit, return fewer. Never invent IDs that are not in the candidate list.
 
 Reply with this exact JSON shape (no other text):
-{"recipe_ids": [<id>, <id>, ...], "explanation": "<2-3 sentence note covering why these fit>"}
+{"explanation": "<2-3 sentence note covering why these fit>", "recipe_ids": [<id>, <id>, ...]}
 
 Order recipe_ids from best fit to worst.
 

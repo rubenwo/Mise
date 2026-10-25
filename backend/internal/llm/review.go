@@ -83,11 +83,12 @@ var countableDisqualifiers = map[string]bool{
 	"salt": true, "extract": true, "oil": true, "puree": true,
 	"juice": true, "butter": true, "pickled": true, "dried": true,
 	"canned": true, "crushed": true, "stewed": true, "pureed": true,
-	"puréed": true,
+	"puréed": true, "starch": true, "flour": true, "leaf": true, "leaves": true,
+	"zest": true, "noodles": true, "chips": true, "wedges": true,
 }
 
 // matchesCountableKey returns true when nameLower contains all words of key
-// (allowing simple plurals via HasPrefix), and contains no disqualifying word.
+// (allowing simple plurals), and contains no disqualifying word.
 // Word-level matching prevents "garlic powder" from matching key "garlic".
 func matchesCountableKey(nameLower, key string) bool {
 	nameWords := strings.Fields(nameLower)
@@ -99,8 +100,9 @@ func matchesCountableKey(nameLower, key string) bool {
 	for _, kw := range strings.Fields(key) {
 		found := false
 		for _, nw := range nameWords {
-			// Allow exact match or simple plural (HasPrefix handles "tomatoes"→"tomato").
-			if nw == kw || strings.HasPrefix(nw, kw) {
+			// Allow exact match or simple plural ("tomatoes"→"tomato"), but not
+			// longer words: "eggplant" must not match "egg".
+			if nw == kw || nw == kw+"s" || nw == kw+"es" {
 				found = true
 				break
 			}
