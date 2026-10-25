@@ -168,10 +168,6 @@ func (b *BackgroundGenerator) loadSettings(ctx context.Context) bgSettings {
 }
 
 func (b *BackgroundGenerator) runGeneration(ctx context.Context, count, servings, maxRetries int, nextRun time.Time) {
-	titles, err := b.queries.ListRecipeTitles(ctx)
-	if err != nil {
-		log.Printf("Background generation: failed to list titles: %v", err)
-	}
 	cuisineCounts, err := b.queries.ListCuisineCounts(ctx)
 	if err != nil {
 		log.Printf("Background generation: failed to list cuisine counts: %v", err)
@@ -180,6 +176,12 @@ func (b *BackgroundGenerator) runGeneration(ctx context.Context, count, servings
 
 	for i := 0; i < count; i++ {
 		targetCuisine := llm.PickLeastRepresentedCuisine(cuisineCounts)
+		// Re-queried per recipe: pending recipes are included, so earlier
+		// recipes from this batch are avoided too.
+		titles, err := b.queries.ListRecipeTitles(ctx, targetCuisine, 60)
+		if err != nil {
+			log.Printf("Background generation: failed to list titles: %v", err)
+		}
 		prompt := llm.BuildBackgroundGeneratePrompt(targetCuisine, llm.AllCuisines(cuisineCounts), i+1, count, servings)
 		recipe := b.generateWithRetry(ctx, prompt, titles, i+1, count, servings, maxRetries, nextRun)
 		if recipe == nil {
@@ -214,7 +216,6 @@ func (b *BackgroundGenerator) runGeneration(ctx context.Context, count, servings
 			b.hub.Publish(llm.SSEEvent{Type: "pending_added", Data: *recipe})
 		}
 		// Update in-process tracking so subsequent recipes in this batch get diverse cuisines.
-		titles = append(titles, recipe.Title)
 		if recipe.CuisineType != "" {
 			cuisineCounts[recipe.CuisineType]++
 		}

@@ -61,13 +61,14 @@ func (o *Orchestrator) GenerateWithTag(ctx context.Context, userPrompt string, a
 
 	events <- SSEEvent{Type: "status", Message: fmt.Sprintf("Starting recipe generation (using %s)...", client.Model())}
 
-	// Some models (gemma4) treat system-prompt tool guidance as optional but
-	// reliably follow a short instruction at the end of the user turn.
+	// Some models (gemma4) treat system-prompt guidance as optional but
+	// reliably follow short instructions at the end of the user turn.
+	userPrompt += AvoidTitlesInstruction(avoidTitles)
 	if slices.ContainsFunc(o.tools, func(t Tool) bool { return t.Function.Name == "db_search" }) {
 		userPrompt += "\n\nStart by calling db_search."
 	}
 	messages := []Message{
-		{Role: "system", Content: GenerationSystemPrompt(o.tools, avoidTitles)},
+		{Role: "system", Content: GenerationSystemPrompt(o.tools)},
 		{Role: "user", Content: userPrompt},
 	}
 

@@ -109,7 +109,7 @@ func (h *MealPlanHandler) Suggestions(w http.ResponseWriter, r *http.Request) {
 
 	// If fewer than 2 DB matches, generate via LLM
 	if len(dbRecipes) < 2 && h.orchestrator != nil {
-		titles, _ := h.queries.ListRecipeTitles(r.Context())
+		titles, _ := h.queries.ListRecipeTitles(r.Context(), "", 40)
 		prompt := llm.BuildLeftoverPrompt(req.Ingredients)
 
 		events := make(chan llm.SSEEvent, 10)

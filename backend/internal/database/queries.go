@@ -284,9 +284,18 @@ func (q *Queries) ListRecipeFingerprints(ctx context.Context) ([]RecipeFingerpri
 	return out, rows.Err()
 }
 
-func (q *Queries) ListRecipeTitles(ctx context.Context) ([]string, error) {
-	// Limit to 40 most recent titles to keep generation prompts concise.
-	rows, err := q.pool.Query(ctx, "SELECT title FROM recipes ORDER BY created_at DESC LIMIT 40")
+// ListRecipeTitles returns up to limit titles for a generation avoid list:
+// library and pending-review recipes from the given cuisine first, since those
+// are the likeliest near-duplicates, then the most recent of the rest.
+func (q *Queries) ListRecipeTitles(ctx context.Context, cuisine string, limit int) ([]string, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT title FROM (
+			SELECT title, cuisine_type, created_at FROM recipes
+			UNION ALL
+			SELECT title, cuisine_type, created_at FROM pending_recipes
+		) t
+		ORDER BY (lower(cuisine_type) = lower($1)) IS TRUE DESC, created_at DESC
+		LIMIT $2`, cuisine, limit)
 	if err != nil {
 		return nil, err
 	}

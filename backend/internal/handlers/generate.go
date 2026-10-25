@@ -34,6 +34,18 @@ func avoidTitlesFromFingerprints(fps []database.RecipeFingerprint) []string {
 	return out
 }
 
+// avoidTitles returns titles the model must not reproduce, favouring the
+// target cuisine and recipes pending review. Falls back to the most recent
+// library titles if the query fails.
+func (h *GenerateHandler) avoidTitles(ctx context.Context, cuisine string, fps []database.RecipeFingerprint) []string {
+	titles, err := h.queries.ListRecipeTitles(ctx, cuisine, 40)
+	if err != nil {
+		log.Printf("Warning: could not fetch avoid titles: %v", err)
+		return avoidTitlesFromFingerprints(fps)
+	}
+	return titles
+}
+
 func (h *GenerateHandler) Single(w http.ResponseWriter, r *http.Request) {
 	var req models.GenerateRequest
 	if !decodeJSON(w, r, &req) {
@@ -49,7 +61,12 @@ func (h *GenerateHandler) Single(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Warning: could not fetch cuisine counts: %v", err)
 	}
 
-	avoidTitles := avoidTitlesFromFingerprints(fps)
+	// Pick the cuisine here rather than in the prompt builder so the avoid
+	// list can favour titles from that cuisine.
+	if req.CuisineType == "" {
+		req.CuisineType = llm.PickLeastRepresentedCuisine(llm.SeedCuisineCounts(cuisineCounts))
+	}
+	avoidTitles := h.avoidTitles(r.Context(), req.CuisineType, fps)
 	prompt := llm.BuildGeneratePrompt(req, cuisineCounts)
 	h.streamGeneration(w, r, prompt, avoidTitles, fps)
 }
@@ -78,12 +95,11 @@ func (h *GenerateHandler) Batch(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Warning: could not fetch cuisine counts: %v", err)
 	}
 
-	avoidTitles := avoidTitlesFromFingerprints(fps)
-
 	// Pre-compute a distinct cuisine for each recipe slot so that concurrent
 	// goroutines don't all pick the same least-represented cuisine.
 	tempCounts := llm.SeedCuisineCounts(cuisineCounts)
 	prompts := make([]string, req.Count)
+	avoidTitles := make([][]string, req.Count)
 	for i := 0; i < req.Count; i++ {
 		slotReq := req.GenerateRequest
 		if slotReq.CuisineType == "" {
@@ -92,6 +108,7 @@ func (h *GenerateHandler) Batch(w http.ResponseWriter, r *http.Request) {
 				tempCounts[slotReq.CuisineType]++
 			}
 		}
+		avoidTitles[i] = h.avoidTitles(r.Context(), slotReq.CuisineType, fps)
 		prompts[i] = llm.BuildGeneratePrompt(slotReq, cuisineCounts)
 		prompts[i] += fmt.Sprintf(" (Recipe %d of %d — make it unique from others in this batch.)", i+1, req.Count)
 	}
@@ -125,7 +142,7 @@ func (h *GenerateHandler) Batch(w http.ResponseWriter, r *http.Request) {
 				}
 			}()
 
-			recipe, messages, genErr := h.orchestrator.GenerateWithTag(r.Context(), prompt, avoidTitles, events, "generation")
+			recipe, messages, genErr := h.orchestrator.GenerateWithTag(r.Context(), prompt, avoidTitles[idx], events, "generation")
 			close(events)
 			fwdWg.Wait() // ensure all events are forwarded before signalling done
 

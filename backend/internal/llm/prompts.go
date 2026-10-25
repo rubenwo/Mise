@@ -166,7 +166,7 @@ const systemPrompt = `You are an experienced recipe developer writing for home c
 Respond with one recipe as a single JSON object with exactly these fields:
 {
   "title": "Chicken Tikka Masala",
-  "description": "Charred yogurt-marinated chicken in a creamy, gently spiced tomato sauce.",
+  "description": "Charred yogurt-marinated chicken in a creamy, gently spiced tomato sauce, served with basmati rice and a cucumber kachumber.",
   "cuisine_type": "Indian",
   "prep_time_minutes": 20,
   "cook_time_minutes": 35,
@@ -176,7 +176,9 @@ Respond with one recipe as a single JSON object with exactly these fields:
     {"name": "chicken thigh", "amount": 600, "unit": "g", "notes": "boneless, cut into chunks"},
     {"name": "onion", "amount": 1, "unit": ""},
     {"name": "garlic", "amount": 3, "unit": "clove"},
-    {"name": "garam masala", "amount": 2, "unit": "tsp"}
+    {"name": "garam masala", "amount": 2, "unit": "tsp"},
+    {"name": "basmati rice", "amount": 300, "unit": "g"},
+    {"name": "cucumber", "amount": 1, "unit": "", "notes": "diced, for the kachumber"}
   ],
   "instructions": ["Mix the yogurt, ...", "..."],
   "dietary_restrictions": ["gluten-free"],
@@ -209,9 +211,8 @@ func SystemPrompt() string {
 
 // GenerationSystemPrompt returns the system prompt for tool-assisted recipe
 // generation. Tool guidance only mentions tools that are actually offered, so
-// the model is never told to call a tool it does not have. avoidTitles lists
-// existing library recipes the model must not reproduce.
-func GenerationSystemPrompt(tools []Tool, avoidTitles []string) string {
+// the model is never told to call a tool it does not have.
+func GenerationSystemPrompt(tools []Tool) string {
 	var sb strings.Builder
 	sb.WriteString(systemPrompt)
 
@@ -237,15 +238,20 @@ func GenerationSystemPrompt(tools []Tool, avoidTitles []string) string {
 		sb.WriteString(" After your research, respond with the recipe JSON.")
 	}
 
-	if len(avoidTitles) > 0 {
-		if len(avoidTitles) > 100 {
-			avoidTitles = avoidTitles[:100]
-		}
-		sb.WriteString("\n\nThe user's library already contains these recipes. Do not reproduce any of them or a close variant: ")
-		sb.WriteString(strings.Join(avoidTitles, "; "))
-		sb.WriteString(".")
-	}
 	return sb.String()
+}
+
+// AvoidTitlesInstruction returns a suffix for the user turn listing existing
+// recipes the model must not reproduce. It lives in the user turn because
+// gemma4 regenerated listed dishes when the list was in the system prompt.
+func AvoidTitlesInstruction(avoidTitles []string) string {
+	if len(avoidTitles) == 0 {
+		return ""
+	}
+	if len(avoidTitles) > 100 {
+		avoidTitles = avoidTitles[:100]
+	}
+	return "\n\nThe library already has these dishes, so choose a different dish: not any of these, and not the same dish under another name. " + strings.Join(avoidTitles, "; ") + "."
 }
 
 // servingsRequirement is shared by generation prompts: small models often
@@ -254,10 +260,20 @@ func servingsRequirement(servings int) string {
 	return fmt.Sprintf("Exactly %d servings: set \"servings\" to %d and scale every amount to match.", servings, servings)
 }
 
-// completeMealRequirement keeps generated dinners shoppable as-is: without it
-// models often write just the main dish, leaving the user to work out sides
-// while ordering groceries.
-const completeMealRequirement = "A complete, balanced dinner: protein, a starch (rice, potatoes, pasta, noodles, bread or grains) and at least 125 g of vegetables per serving. If the dish is traditionally served with sides, such as rice or a vegetable, include them in the ingredients and steps."
+// mealRules steer new recipes toward a whole dinner rather than a lone dish.
+// Without them models write just the main, leaving the user to work out sides
+// while ordering groceries; asking for the cuisine's own accompaniments keeps
+// the result authentic instead of bolting generic rice and broccoli onto
+// everything. They go in the user turn of new-recipe prompts only, where gemma4
+// follows them most reliably; imports, refinements and leftover recipes share
+// the system prompt and must not grow sides.
+const mealRules = `Meal rules:
+- The recipe is a whole dinner as it is served in its cuisine, not a lone dish. The ingredients and steps cover everything on the table, so the shopping list is complete.
+- Every dinner has a protein (meat, fish, eggs, tofu, legumes or cheese), a starch (rice, potatoes, bread, pasta, noodles, grains or flatbread) and at least 125 g of vegetables per serving. Onion, garlic, herbs and chili do not count toward the vegetables.
+- Get there the way the cuisine does. A dish that is already a complete plate (pho, bibimbap, paella, a hearty stew with potatoes) needs nothing extra. A main that is eaten with sides gets its traditional ones: steamed rice and a stir-fried green for a Chinese braise, rice and a sambal-dressed vegetable for a Malaysian curry, potatoes and a seasonal vegetable for a Dutch or German main, warm tortillas and a salsa or slaw for Mexican, flatbread and a salad for a Levantine grill.
+- Keep sides simple: at most two, with only one starch on the plate (pasta needs no bread, potatoes need no pita). Use few extra ingredients, cook them alongside the main and write them as steps in cooking order.
+- description: one sentence on what makes the dish appealing that names what it is served with.
+- title: only the main dish's common name, without the sides ("Salmon Teriyaki", not "Salmon Teriyaki with Rice and Bok Choy"). Never add serving sizes or filler such as "for One", "for Two", "Easy" or "Ultimate".`
 
 // BuildGeneratePrompt builds the user prompt for a single generation.
 // Tool guidance and avoid-titles live in the system prompt.
@@ -274,7 +290,9 @@ func BuildGeneratePrompt(req models.GenerateRequest, cuisineCounts map[string]in
 	}
 	sb.WriteString(".")
 
-	reqs := []string{completeMealRequirement}
+	sb.WriteString("\n\n" + mealRules)
+
+	var reqs []string
 	if req.Servings > 0 {
 		reqs = append(reqs, servingsRequirement(req.Servings))
 	}
@@ -310,8 +328,8 @@ func BuildBackgroundGeneratePrompt(targetCuisine string, allCuisines []string, i
 	} else {
 		sb.WriteString("Create a dinner recipe.")
 	}
+	sb.WriteString("\n\n" + mealRules)
 	sb.WriteString("\n\nRequirements:\n- " + servingsRequirement(servings))
-	sb.WriteString("\n- " + completeMealRequirement)
 	if len(allCuisines) > 0 {
 		sb.WriteString("\n- cuisine_type must be one of: " + strings.Join(allCuisines, ", ") + ".")
 	}

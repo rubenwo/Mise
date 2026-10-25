@@ -9,7 +9,7 @@ import (
 )
 
 func TestGenerationSystemPrompt_OnlyMentionsOfferedTools(t *testing.T) {
-	withoutEdamam := GenerationSystemPrompt([]Tool{WebSearchTool, DBSearchTool}, nil)
+	withoutEdamam := GenerationSystemPrompt([]Tool{WebSearchTool, DBSearchTool})
 	if strings.Contains(withoutEdamam, "edamam_search") {
 		t.Error("prompt mentions edamam_search although the tool is not offered")
 	}
@@ -17,23 +17,26 @@ func TestGenerationSystemPrompt_OnlyMentionsOfferedTools(t *testing.T) {
 		t.Error("prompt should describe the offered tools")
 	}
 
-	withEdamam := GenerationSystemPrompt([]Tool{WebSearchTool, DBSearchTool, EdamamSearchTool}, nil)
+	withEdamam := GenerationSystemPrompt([]Tool{WebSearchTool, DBSearchTool, EdamamSearchTool})
 	if !strings.Contains(withEdamam, "edamam_search") {
 		t.Error("prompt should mention edamam_search when it is offered")
 	}
 
-	noTools := GenerationSystemPrompt(nil, nil)
+	noTools := GenerationSystemPrompt(nil)
 	if noTools != SystemPrompt() {
-		t.Error("with no tools and no avoid list the base system prompt should be unchanged")
+		t.Error("with no tools the base system prompt should be unchanged")
 	}
 }
 
-func TestGenerationSystemPrompt_CapsAvoidTitles(t *testing.T) {
+func TestAvoidTitlesInstruction(t *testing.T) {
+	if AvoidTitlesInstruction(nil) != "" {
+		t.Error("no titles should add nothing")
+	}
 	titles := make([]string, 150)
 	for i := range titles {
 		titles[i] = "T"
 	}
-	prompt := GenerationSystemPrompt(nil, titles)
+	prompt := AvoidTitlesInstruction(titles)
 	if got := strings.Count(prompt, "T;") + 1; got != 100 {
 		t.Errorf("avoid list has %d titles, want 100", got)
 	}
@@ -46,7 +49,7 @@ func TestBuildGeneratePrompt(t *testing.T) {
 		DietaryRestrictions: []string{"vegan"},
 		AdditionalNotes:     "  spicy  ",
 	}, nil)
-	for _, want := range []string{"Thai cuisine", `"servings" to 2`, "vegan", "The user also asked for: spicy", completeMealRequirement} {
+	for _, want := range []string{"Thai cuisine", `"servings" to 2`, "vegan", "The user also asked for: spicy", mealRules} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("prompt missing %q:\n%s", want, prompt)
 		}
