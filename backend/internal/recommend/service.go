@@ -18,11 +18,16 @@ import (
 // EmbeddingTag is the provider tag that serves recipe embeddings.
 const EmbeddingTag = "embedding"
 
+// embedBatch recipes go in one request. Large batches matter because the
+// model is unloaded after every request (keep_alive 0).
+const embedBatch = 256
+
 // Service keeps recipe embeddings current and serves recommendations from a
 // cached model that is rebuilt whenever the library changes.
 type Service struct {
 	queries *database.Queries
 	pool    *llm.ClientPool
+	sync    chan struct{} // requests an embedding sync
 
 	mu       sync.Mutex
 	model    *Model
@@ -31,15 +36,16 @@ type Service struct {
 }
 
 func NewService(q *database.Queries, pool *llm.ClientPool) *Service {
-	return &Service{queries: q, pool: pool}
+	return &Service{queries: q, pool: pool, sync: make(chan struct{}, 1)}
 }
 
-// Start embeds new or edited recipes at startup and every 10 minutes. The
-// model itself rebuilds on the next request after any library change, so a
-// new recipe is recommendable straight away (on TF-IDF until it is embedded).
+// Start embeds new or edited recipes at startup and whenever a model rebuild
+// finds recipes without a current embedding (see currentModel), with a daily
+// sweep as a safety net. A new recipe is recommendable straight away on
+// TF-IDF and gains its embedding moments later.
 func (s *Service) Start(ctx context.Context) {
 	go func() {
-		ticker := time.NewTicker(10 * time.Minute)
+		ticker := time.NewTicker(24 * time.Hour)
 		defer ticker.Stop()
 		for {
 			if err := s.syncEmbeddings(ctx); err != nil && ctx.Err() == nil {
@@ -48,6 +54,7 @@ func (s *Service) Start(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				return
+			case <-s.sync:
 			case <-ticker.C:
 			}
 		}
@@ -82,8 +89,8 @@ func (s *Service) syncEmbeddings(ctx context.Context) error {
 			stale = append(stale, r)
 		}
 	}
-	for start := 0; start < len(stale); start += 32 {
-		batch := stale[start:min(start+32, len(stale))]
+	for start := 0; start < len(stale); start += embedBatch {
+		batch := stale[start:min(start+embedBatch, len(stale))]
 		texts := make([]string, len(batch))
 		for i, r := range batch {
 			texts[i] = embedText(r)
@@ -144,6 +151,21 @@ func (s *Service) currentModel(ctx context.Context) (*Model, error) {
 	s.model = Build(recipes, 1)
 	s.modelKey = key
 	s.embModel = embModel
+
+	// Recipes added or edited since their last embedding: sync them in the
+	// background; the sync changes the state key, so the next request
+	// rebuilds with the fresh embeddings.
+	if client := s.pool.AcquireWithTag(EmbeddingTag); client != nil {
+		for _, r := range rows {
+			if r.TextHash != textHash(client.Model(), embedText(r)) {
+				select {
+				case s.sync <- struct{}{}:
+				default: // a sync is already pending
+				}
+				break
+			}
+		}
+	}
 	slog.Info("built recommendation model", "recipes", len(recipes), "families", s.model.Families(),
 		"embeddings", modelCount[embModel], "took", time.Since(start).Round(time.Millisecond))
 	return s.model, nil

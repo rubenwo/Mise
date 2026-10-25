@@ -36,7 +36,11 @@ func (c *Client) Embed(ctx context.Context, inputs []string) ([][]float32, error
 	var r struct {
 		Embeddings [][]float32 `json:"embeddings"`
 	}
-	if err := c.postJSON(ctx, "/api/embed", map[string]any{"model": c.model, "input": inputs}, &r); err != nil {
+	// keep_alive 0 unloads the model right after the batch: embeddings run a
+	// few times a week, load in under a second, and an idle resident model
+	// still draws power on the GPU host.
+	body := map[string]any{"model": c.model, "input": inputs, "keep_alive": 0}
+	if err := c.postJSON(ctx, "/api/embed", body, &r); err != nil {
 		return nil, err
 	}
 	if len(r.Embeddings) != len(inputs) {
