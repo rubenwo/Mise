@@ -4,6 +4,7 @@ Self-hosted, single-user recipe app: Go 1.26 backend (`backend/`, chi + pgx), Re
 
 ## Commands
 - `cd backend && go build ./... && go vet ./... && go test ./...` - backend checks
+- `cd backend && golangci-lint run ./...` - CI's lint step; needs v2.15 (the `golangci-lint` in `~/go/bin` is v1.26 and can't type-check this code), so install with `GOBIN=<scratch> go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0`
 - `cd frontend && npx tsc --noEmit -p . && npm run lint && npx vitest run && npm run build` - frontend checks
 - `MISE_OLLAMA_HOST=http://<host>:11434 go test -tags e2e -run E2E ./internal/llm/` - live LLM/embedding tests (opt-in)
 - `MISE_REC_DATA=<dir> go test -tags e2e -run Data ./internal/recommend/` - run the recommender on exported library JSON
