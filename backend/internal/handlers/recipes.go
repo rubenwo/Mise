@@ -21,10 +21,17 @@ type RecipeHandler struct {
 	queries       *database.Queries
 	imageSearcher *tools.ImageSearcher
 	llmPool       *llm.ClientPool
+	searcher      librarySearcher
 }
 
-func NewRecipeHandler(q *database.Queries, imageSearcher *tools.ImageSearcher, llmPool *llm.ClientPool) *RecipeHandler {
-	return &RecipeHandler{queries: q, imageSearcher: imageSearcher, llmPool: llmPool}
+// librarySearcher scores recipes by semantic match with a description of a
+// dish (recommend.Service).
+type librarySearcher interface {
+	Search(ctx context.Context, description string) (map[int]float64, error)
+}
+
+func NewRecipeHandler(q *database.Queries, imageSearcher *tools.ImageSearcher, llmPool *llm.ClientPool, searcher librarySearcher) *RecipeHandler {
+	return &RecipeHandler{queries: q, imageSearcher: imageSearcher, llmPool: llmPool, searcher: searcher}
 }
 
 func (h *RecipeHandler) List(w http.ResponseWriter, r *http.Request) {

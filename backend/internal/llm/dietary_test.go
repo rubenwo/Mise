@@ -31,6 +31,18 @@ func TestDropContradictedDiets(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			probe := models.Recipe{}
+			for _, n := range tt.ingredients {
+				probe.Ingredients = append(probe.Ingredients, models.Ingredient{Name: n})
+			}
+			for _, label := range tt.labels {
+				if label == "pescatarian" {
+					continue
+				}
+				if want := slices.Contains(tt.wantKept, label); SuitsDiet(&probe, label) != want {
+					t.Errorf("SuitsDiet(%q) = %v, want %v", label, !want, want)
+				}
+			}
 			r := models.Recipe{Title: tt.name, DietaryRestrictions: slices.Clone(tt.labels)}
 			for _, n := range tt.ingredients {
 				r.Ingredients = append(r.Ingredients, models.Ingredient{Name: n})

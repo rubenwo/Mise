@@ -17,6 +17,7 @@ type Model struct {
 	index    map[int]int
 	vec      [][]float64 // blended TF-IDF + embedding, unit length
 	emb      [][]float64 // centred embedding alone (nil per recipe when missing)
+	mean     []float64   // embedding mean subtracted by centre
 	vocab    []string
 	tfidf    [][]float64
 	families clustering
@@ -47,7 +48,7 @@ func Build(recipes []Recipe, seed uint64) *Model {
 			m.emb[i] = toFloat64(r.Embedding)
 		}
 	}
-	centre(m.emb)
+	m.mean = centre(m.emb)
 	m.calibrate()
 	for i := range recipes {
 		m.vec[i] = blend(m.tfidf[i], m.emb[i], dims)
@@ -60,7 +61,9 @@ func Build(recipes []Recipe, seed uint64) *Model {
 // crowd recipes into a narrow cone (with EmbeddingGemma's clustering prompt
 // two random recipes score ~0.80), which would shrink the embedding's say in
 // the blend; centring spreads them back out.
-func centre(emb [][]float64) {
+// It returns the mean it subtracted (nil when too few recipes are embedded),
+// so queries can be centred the same way.
+func centre(emb [][]float64) []float64 {
 	var mean []float64
 	n := 0
 	for _, e := range emb {
@@ -76,7 +79,10 @@ func centre(emb [][]float64) {
 		n++
 	}
 	if n < 2 {
-		return
+		return nil
+	}
+	for d := range mean {
+		mean[d] /= float64(n)
 	}
 	for i, e := range emb {
 		if e == nil {
@@ -84,10 +90,11 @@ func centre(emb [][]float64) {
 		}
 		v := make([]float64, len(e))
 		for d, x := range e {
-			v[d] = x - mean[d]/float64(n)
+			v[d] = x - mean[d]
 		}
 		emb[i] = normalize(v)
 	}
+	return mean
 }
 
 // calibrate sets the same-dish and near-twin cut-offs as percentiles of this

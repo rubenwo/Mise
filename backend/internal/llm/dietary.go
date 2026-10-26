@@ -92,11 +92,26 @@ func isGluten(name string) bool {
 	return !hasPhrase(name, glutenSafe) && matchesAny(name, glutenWords)
 }
 
-// DropContradictedDiets removes dietary labels that an ingredient
-// contradicts and returns the labels it removed. Generation runs it on every
-// new recipe; a startup sweep applies it to the existing library.
-func DropContradictedDiets(recipe *models.Recipe) []string {
-	conflict := map[string]string{} // label -> first offending ingredient
+// SuitsDiet reports whether recipe's ingredients fit diet (vegetarian, vegan,
+// pescatarian, dairy-free or gluten-free), judged from the ingredients rather
+// than the recipe's own labels, which are often missing or inconsistent.
+// Pescatarian has no word list of its own: a recipe suits it when it is
+// vegetarian or labelled pescatarian.
+func SuitsDiet(recipe *models.Recipe, diet string) bool {
+	diet = strings.ToLower(diet)
+	if diet == "pescatarian" {
+		return SuitsDiet(recipe, "vegetarian") || slices.ContainsFunc(recipe.DietaryRestrictions, func(d string) bool {
+			return strings.EqualFold(d, "pescatarian")
+		})
+	}
+	_, conflicts := dietConflicts(recipe)[diet]
+	return !conflicts
+}
+
+// dietConflicts maps each label an ingredient contradicts to the first
+// offending ingredient.
+func dietConflicts(recipe *models.Recipe) map[string]string {
+	conflict := map[string]string{}
 	for _, ing := range recipe.Ingredients {
 		// "chicken or vegetable stock": a label only conflicts when every
 		// alternative does.
@@ -113,6 +128,14 @@ func DropContradictedDiets(recipe *models.Recipe) []string {
 		check("dairy-free", isDairy)
 		check("gluten-free", isGluten)
 	}
+	return conflict
+}
+
+// DropContradictedDiets removes dietary labels that an ingredient
+// contradicts and returns the labels it removed. Generation runs it on every
+// new recipe; a startup sweep applies it to the existing library.
+func DropContradictedDiets(recipe *models.Recipe) []string {
+	conflict := dietConflicts(recipe)
 	var removed []string
 	recipe.DietaryRestrictions = slices.DeleteFunc(recipe.DietaryRestrictions, func(d string) bool {
 		if ing, ok := conflict[strings.ToLower(d)]; ok {

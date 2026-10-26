@@ -324,6 +324,47 @@ func (s *Service) feedback(ctx context.Context) (map[int]Feedback, error) {
 	return fb, nil
 }
 
+// searchPrompt is EmbeddingGemma's retrieval query prompt. Against the
+// clustering-prompt recipe embeddings it found the right dishes for
+// descriptive requests ("something smoky and warming") better than reusing
+// the clustering prompt, especially after centring.
+const searchPrompt = "task: search result | query: "
+
+// Search scores every embedded recipe by how well it matches a free-text
+// description of a dish (cosine similarity, roughly -0.2 to 0.6). It returns
+// nil when embeddings are unavailable, so callers fall back to other signals.
+func (s *Service) Search(ctx context.Context, description string) (map[int]float64, error) {
+	if strings.TrimSpace(description) == "" || !s.embedder.Available() {
+		return nil, nil
+	}
+	m, _, err := s.currentModel(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	compatible := s.builtEmb == s.embModel
+	s.mu.Unlock()
+	if !compatible || m.mean == nil {
+		return nil, nil
+	}
+	vecs, err := s.embedder.Embed(ctx, []string{searchPrompt + description})
+	if err != nil {
+		return nil, err
+	}
+	q := toFloat64(vecs[0])
+	for d := range q {
+		q[d] -= m.mean[d]
+	}
+	q = normalize(q)
+	scores := make(map[int]float64, len(m.recipes))
+	for i, e := range m.emb {
+		if e != nil {
+			scores[m.recipes[i].ID] = dot(q, e)
+		}
+	}
+	return scores, nil
+}
+
 // Status describes the recommender for the settings page.
 type Status struct {
 	Recipes  int    `json:"recipes"`

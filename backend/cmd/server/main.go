@@ -127,15 +127,13 @@ func main() {
 
 	translator := translation.New(clientPool, queries)
 
-	imageSearcher := tools.NewImageSearcher(cfg.Search.Timeout, cfg.Server.ImagesDir)
-	recipeHandler := handlers.NewRecipeHandler(queries, imageSearcher, clientPool)
-	generateHandler := handlers.NewGenerateHandler(orchestrator, queries)
 	// Remove dietary labels the ingredients contradict (e.g. gluten-free with
 	// soy sauce) from recipes saved before generation checked for it.
 	go llm.SweepDietaryLabels(ctx, queries)
 
 	// Recommendations: embeds recipes with EmbeddingGemma on the CPU and
-	// clusters the library into flavour families for "New to you" picks.
+	// clusters the library into flavour families for "New to you" picks; the
+	// library chat uses the same embeddings for semantic search.
 	embedder := embedding.New(cfg.Embedding.ModelDir, cfg.Embedding.RuntimeLib)
 	if !embedder.Available() {
 		slog.Warn("embedding model not found; recommendations use ingredients only", "dir", cfg.Embedding.ModelDir)
@@ -143,6 +141,10 @@ func main() {
 	recommender := recommend.NewService(queries, embedder, embedding.Model)
 	queries.OnRecipesChanged(recommender.Notify)
 	recommender.Start(ctx)
+
+	imageSearcher := tools.NewImageSearcher(cfg.Search.Timeout, cfg.Server.ImagesDir)
+	recipeHandler := handlers.NewRecipeHandler(queries, imageSearcher, clientPool, recommender)
+	generateHandler := handlers.NewGenerateHandler(orchestrator, queries)
 	recommendationHandler := handlers.NewRecommendationHandler(queries, recommender)
 
 	mealPlanHandler := handlers.NewMealPlanHandler(queries, orchestrator, cfg.Search.Timeout, translator, recommender)

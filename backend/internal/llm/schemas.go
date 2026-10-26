@@ -134,6 +134,21 @@ var ScanSchema = mustSchema("scan", object(
 	), 0)},
 ))
 
+// LibraryQuerySchema constrains the reading of a request for recipe ideas.
+// "situation" comes first so the model reasons about what the user's
+// circumstances imply (on holiday: every ingredient must be bought) before
+// it commits to filters.
+var LibraryQuerySchema = mustSchema("library_query", object(
+	prop{"situation", str},
+	prop{"dietary", arrayOf(enum("vegetarian", "vegan", "pescatarian", "gluten-free", "dairy-free"), 0)},
+	prop{"cuisine", str},
+	prop{"max_minutes", integer},
+	prop{"include", arrayOf(str, 0)},
+	prop{"avoid", arrayOf(str, 0)},
+	prop{"max_ingredients", integer},
+	prop{"description", str},
+))
+
 // RankSchema constrains the library recommendation ranking reply. The
 // explanation comes first so the model weighs the candidates before it
 // commits to IDs.

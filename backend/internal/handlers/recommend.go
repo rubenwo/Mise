@@ -1,41 +1,63 @@
 package handlers
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"slices"
 	"strings"
 
-	"github.com/rubenwo/mise/internal/database"
 	"github.com/rubenwo/mise/internal/llm"
 	"github.com/rubenwo/mise/internal/models"
 )
 
-// recommendExtractPrompt drives the first LLM turn: convert the conversation
-// into a single library_search tool call.
-const recommendExtractPrompt = `You help the user find recipes from their existing library. Call library_search exactly once to fetch candidates. Extract structured fields from the latest user message, taking earlier turns into account when the user is refining.
+// Finding recipes for a request like "on holiday, want quick home-made
+// meals" runs in three steps. The model reads the request and works out what
+// the user's situation implies (every ingredient has to be bought, so few of
+// them) as filters plus a one-line description of the ideal dish. Code then
+// applies the filters to the whole library, relaxing the soft ones if nothing
+// is left, and orders what remains by how well its embedding matches the
+// description. Finally the model reads the best dozen in full (ingredients
+// and method, so it can judge cookware and effort) and picks the ones to show.
 
-Examples:
-- "I'm cooking for 8 vegetarians, balanced, nothing exotic" → {"keywords":"","dietary_restrictions":["vegetarian"]}
-- "italian pasta dishes under 30 minutes" → {"keywords":"pasta","cuisine_type":"Italian","max_total_minutes":30}
-- "quick vegetarian dinner with chickpeas" → {"keywords":"chickpeas","dietary_restrictions":["vegetarian"],"tags":["quick"]}
+// libraryQueryPrompt is sent as the user turn: gemma4 follows instructions
+// there more reliably than in a system prompt.
+const libraryQueryPrompt = `Turn a request for recipe ideas into search filters for the user's own recipe library.
 
-Prefer broad searches that return many candidates — the ranking step picks the best fit. Use keywords only for distinctive ingredient or dish words; leave it empty if the user described a style rather than a dish.`
+%s
 
-// recommendRankPrompt drives the second LLM turn: pick the best N candidates
-// from the search results based on the user's stated needs. The candidate list
-// is appended to this prompt.
-const recommendRankPromptHeader = `You are recommending recipes from the user's library. Pick the %d recipes from the candidate list that best fit the user's request, judging by their description, ingredients, cuisine, dietary fit, and time. If fewer than %d candidates are a good fit, return fewer. Never invent IDs that are not in the candidate list.
+First, in situation, think about what the user's circumstances imply for the dish beyond their literal words. Someone on holiday or without a stocked kitchen has to buy every ingredient, so they want few ingredients and simple cooking; someone tired or short on time wants something quick; cooking for a crowd calls for dishes that scale. When the latest message refines an earlier one, keep the earlier requirements unless the user drops them.
 
-Reply with this exact JSON shape (no other text):
-{"explanation": "<2-3 sentence note covering why these fit>", "recipe_ids": [<id>, <id>, ...]}
+Then fill in the filters from what the user said and what their situation implies, leaving anything that doesn't apply empty or 0. Put a diet in dietary only when the dish must suit it. Use cuisine for a single cuisine they named and max_minutes for a time limit (about 30 for quick). Include and avoid hold only foods you could buy, such as chickpeas or mushrooms, never flavours, dish types or cooking styles: include what they want in the dish, and avoid only foods the user names as unwanted or can't eat. A wish like "lighter" or "less heavy" belongs in the description, not in avoid. If they need few ingredients, set max_ingredients to the most they would accept (about 10). Finally, write description as one short line describing the ideal dish, including whatever the filters can't capture, such as texture, cookware, effort, occasion or mood.`
 
-Order recipe_ids from best fit to worst.
+const libraryRankPrompt = `The user is looking for recipe ideas from their own library.
 
-Candidates:
-`
+%s
+
+What their situation implies: %s
+
+These are the closest matches in the library:
+
+%s
+Pick up to %d recipes that best fit everything the user asked for, best first. Judge cookware, effort and the number of ingredients from the method and ingredient list. Leave out recipes that clearly break a requirement, and if none fits every requirement, pick the closest and say what doesn't fit. Write the explanation in two or three sentences to the user, mentioning the picked recipes by name (never by ID). Only use IDs from the list.`
+
+// shortlistSize is how many candidates the ranking turn reads in full.
+const shortlistSize = 12
+
+// libraryQuery is the model's reading of a request (LibraryQuerySchema).
+type libraryQuery struct {
+	Situation      string   `json:"situation"`
+	Dietary        []string `json:"dietary"`
+	Cuisine        string   `json:"cuisine"`
+	MaxMinutes     int      `json:"max_minutes"`
+	Include        []string `json:"include"`
+	Avoid          []string `json:"avoid"`
+	MaxIngredients int      `json:"max_ingredients"`
+	Description    string   `json:"description"`
+}
 
 // rankResponseSchema is the structured reply expected from the ranking turn.
 type rankResponseSchema struct {
@@ -75,13 +97,9 @@ func (h *RecipeHandler) RecommendChat(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "recommendations not available")
 		return
 	}
-
-	limit := req.Limit
-	if limit <= 0 {
+	limit := min(max(req.Limit, 1), 10)
+	if req.Limit <= 0 {
 		limit = 3
-	}
-	if limit > 10 {
-		limit = 10
 	}
 
 	client := h.llmPool.AcquireWithTag("search")
@@ -90,28 +108,26 @@ func (h *RecipeHandler) RecommendChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Step 1: ask the model to translate the conversation into a library_search call.
-	extractMessages := []llm.Message{{Role: "system", Content: recommendExtractPrompt}}
-	for _, m := range req.Messages {
-		extractMessages = append(extractMessages, llm.Message{Role: m.Role, Content: m.Content})
-	}
-
-	searchReq, err := h.extractSearchParams(r.Context(), client, extractMessages, last.Content)
+	conversation := formatConversation(req.Messages)
+	query, err := readLibraryQuery(r.Context(), client, conversation)
 	if err != nil {
-		log.Printf("RecommendChat extract: %v", err)
+		log.Printf("RecommendChat read request: %v", err)
 		writeError(w, http.StatusInternalServerError, "could not interpret request: "+err.Error())
 		return
 	}
 
-	// Run the search with a wider candidate pool so the ranking step has options.
-	const candidatePool = 30
-	searchReq.Limit = candidatePool
-	candidates, err := h.queries.LibrarySearch(r.Context(), searchReq)
+	recipes, _, err := h.queries.ListRecipes(r.Context(), 100000, 0, "")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "library search failed")
 		return
 	}
-
+	var scores map[int]float64
+	if h.searcher != nil {
+		if scores, err = h.searcher.Search(r.Context(), query.Description); err != nil {
+			log.Printf("RecommendChat semantic search: %v (ranking without it)", err)
+		}
+	}
+	candidates, relaxed := shortlist(recipes, query, scores, shortlistSize)
 	if len(candidates) == 0 {
 		writeJSON(w, http.StatusOK, RecommendResponse{
 			Message: "I couldn't find any recipes in your library that match. Try broadening the criteria, or tell me what to relax.",
@@ -119,118 +135,210 @@ func (h *RecipeHandler) RecommendChat(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	note := relaxedNote(relaxed)
 
-	// If we have fewer candidates than we need, skip the ranking step — return them all.
-	if len(candidates) <= limit {
-		writeJSON(w, http.StatusOK, RecommendResponse{
-			Message: fmt.Sprintf("Here %s the %d recipe%s from your library that fit.",
-				pluralIsAre(len(candidates)), len(candidates), pluralS(len(candidates))),
-			Recipes: candidates,
-		})
-		return
-	}
-
-	// Step 2: ask the model to rank the candidates and explain its picks.
-	ranked, err := h.rankCandidates(r.Context(), client, req.Messages, candidates, limit)
+	ranked, err := rankCandidates(r.Context(), client, conversation, query.Situation, candidates, limit)
 	if err != nil {
-		log.Printf("RecommendChat rank: %v — falling back to first %d candidates", err, limit)
-		writeJSON(w, http.StatusOK, RecommendResponse{
-			Message: fmt.Sprintf("Here are %d recipes that match. (I couldn't refine the ranking, so these are the most recent matches.)", limit),
-			Recipes: candidates[:limit],
-		})
-		return
+		log.Printf("RecommendChat rank: %v — falling back to the %d closest matches", err, limit)
+		ranked = RecommendResponse{
+			Message: "Here are the closest matches in your library. (I couldn't weigh them against your request, so check the details.)",
+			Recipes: candidates[:min(limit, len(candidates))],
+		}
 	}
-
+	if note != "" {
+		ranked.Message = note + " " + ranked.Message
+	}
 	writeJSON(w, http.StatusOK, ranked)
 }
 
-// extractSearchParams runs the tool-calling turn and parses the library_search arguments.
-// Falls back to a keyword-only search using the latest user message if the model
-// fails to call the tool.
-func (h *RecipeHandler) extractSearchParams(ctx context.Context, client *llm.Client, messages []llm.Message, latestUserMessage string) (database.LibrarySearchRequest, error) {
-	resp, err := client.Chat(ctx, messages, []llm.Tool{llm.LibrarySearchTool})
-	if err != nil {
-		return database.LibrarySearchRequest{}, fmt.Errorf("chat failed: %w", err)
+// formatConversation renders the chat for the model, keeping earlier turns
+// so refinements ("something lighter") build on the original request.
+func formatConversation(messages []models.ChatMessage) string {
+	last := messages[len(messages)-1].Content
+	if len(messages) == 1 {
+		return fmt.Sprintf("The user's request: %q", last)
 	}
-
-	var args struct {
-		Keywords            string   `json:"keywords"`
-		CuisineType         string   `json:"cuisine_type"`
-		DietaryRestrictions []string `json:"dietary_restrictions"`
-		Tags                []string `json:"tags"`
-		MaxTotalMinutes     int      `json:"max_total_minutes"`
-	}
-
-	if len(resp.Message.ToolCalls) > 0 {
-		tc := resp.Message.ToolCalls[0]
-		if err := json.Unmarshal(tc.Function.Arguments, &args); err != nil {
-			log.Printf("RecommendChat: tool args parse error: %v, raw: %s", err, string(tc.Function.Arguments))
-			args.Keywords = latestUserMessage
+	var sb strings.Builder
+	sb.WriteString("Earlier in the conversation:\n")
+	for _, m := range messages[:len(messages)-1] {
+		who := "User"
+		if m.Role != "user" {
+			who = "Mise"
 		}
-	} else {
-		log.Printf("RecommendChat: no tool call, falling back to keyword search for %q", latestUserMessage)
-		args.Keywords = latestUserMessage
+		fmt.Fprintf(&sb, "%s: %s\n", who, strings.TrimSpace(m.Content))
 	}
-
-	return database.LibrarySearchRequest{
-		Keywords:            args.Keywords,
-		CuisineType:         args.CuisineType,
-		DietaryRestrictions: args.DietaryRestrictions,
-		Tags:                args.Tags,
-		MaxTotalMinutes:     args.MaxTotalMinutes,
-	}, nil
+	fmt.Fprintf(&sb, "\nThe user's latest message: %q", last)
+	return sb.String()
 }
 
-// rankCandidates asks the model to pick `limit` recipes from `candidates` that best
-// match the conversation, returning a RecommendResponse ready to send to the client.
-func (h *RecipeHandler) rankCandidates(ctx context.Context, client *llm.Client, history []models.ChatMessage, candidates []models.Recipe, limit int) (RecommendResponse, error) {
-	rankSystem := fmt.Sprintf(recommendRankPromptHeader, limit, limit) + formatCandidates(candidates)
+func readLibraryQuery(ctx context.Context, client *llm.Client, conversation string) (libraryQuery, error) {
+	resp, err := client.ChatJSON(ctx, []llm.Message{{Role: "user", Content: fmt.Sprintf(libraryQueryPrompt, conversation)}}, llm.LibraryQuerySchema)
+	if err != nil {
+		return libraryQuery{}, err
+	}
+	var q libraryQuery
+	if err := json.Unmarshal([]byte(extractJSONObject(resp.Message.Content)), &q); err != nil {
+		return libraryQuery{}, fmt.Errorf("parse request: %w", err)
+	}
+	return q, nil
+}
 
-	rankMessages := []llm.Message{{Role: "system", Content: rankSystem}}
-	for _, m := range history {
-		rankMessages = append(rankMessages, llm.Message{Role: m.Role, Content: m.Content})
+func extractJSONObject(content string) string {
+	content = strings.TrimSpace(content)
+	if i := strings.Index(content, "{"); i >= 0 {
+		if j := strings.LastIndex(content, "}"); j >= i {
+			return content[i : j+1]
+		}
+	}
+	return content
+}
+
+// softFilter is a requirement that is dropped when no recipe meets it on
+// top of the ones already applied. Diets and avoided ingredients are hard
+// filters and never dropped.
+type softFilter struct {
+	note string // what was given up, for the reply
+	keep func(r *models.Recipe) bool
+}
+
+// shortlist applies q to the library and returns the n best candidates, plus
+// a note for each soft requirement that had to be dropped to find any.
+// Candidates are ordered by semantic match with q.Description, minus a
+// penalty per ingredient over the requested maximum.
+func shortlist(recipes []models.Recipe, q libraryQuery, scores map[int]float64, n int) ([]models.Recipe, []string) {
+	var pool []*models.Recipe
+	for i := range recipes {
+		r := &recipes[i]
+		if !slices.ContainsFunc(q.Dietary, func(d string) bool { return !llm.SuitsDiet(r, d) }) &&
+			!slices.ContainsFunc(q.Avoid, func(a string) bool { return mentions(r, a) }) {
+			pool = append(pool, r)
+		}
 	}
 
-	resp, err := client.ChatJSON(ctx, rankMessages, llm.RankSchema)
+	// In priority order: wanted ingredients and cuisine are usually stated
+	// outright, a time limit is often inferred ("quick").
+	var soft []softFilter
+	for _, inc := range q.Include {
+		soft = append(soft, softFilter{inc, func(r *models.Recipe) bool { return mentions(r, inc) }})
+	}
+	if q.Cuisine != "" {
+		soft = append(soft, softFilter{"the " + q.Cuisine + " cuisine", func(r *models.Recipe) bool {
+			return strings.EqualFold(r.CuisineType, q.Cuisine)
+		}})
+	}
+	if q.MaxMinutes > 0 {
+		soft = append(soft, softFilter{fmt.Sprintf("the %d-minute limit", q.MaxMinutes), func(r *models.Recipe) bool {
+			return r.PrepTimeMinutes+r.CookTimeMinutes <= q.MaxMinutes
+		}})
+	}
+
+	var relaxed []string
+	matches := pool
+	for _, f := range soft {
+		kept := slices.DeleteFunc(slices.Clone(matches), func(r *models.Recipe) bool { return !f.keep(r) })
+		if len(kept) == 0 {
+			relaxed = append(relaxed, f.note)
+			continue
+		}
+		matches = kept
+	}
+
+	score := func(r *models.Recipe) float64 {
+		s := scores[r.ID]
+		if q.MaxIngredients > 0 {
+			s -= 0.02 * float64(max(0, len(r.Ingredients)-q.MaxIngredients))
+		}
+		return s
+	}
+	slices.SortStableFunc(matches, func(a, b *models.Recipe) int { return cmp.Compare(score(b), score(a)) })
+	out := make([]models.Recipe, 0, min(n, len(matches)))
+	for _, r := range matches[:min(n, len(matches))] {
+		out = append(out, *r)
+	}
+	return out, relaxed
+}
+
+// foodKinds lists what counts as a general food word, which recipes rarely
+// use themselves ("spaghetti", not "pasta").
+var foodKinds = map[string][]string{
+	"pasta":  {"spaghetti", "penne", "linguine", "tagliatelle", "fusilli", "rigatoni", "macaroni", "orzo", "lasagn", "pappardelle", "farfalle", "orecchiette", "gnocchi", "ravioli", "tortellini"},
+	"noodle": {"udon", "ramen", "soba", "vermicelli", "glass noodle", "rice noodle", "egg noodle", "japchae"},
+	"fish":   {"salmon", "cod", "tuna", "haddock", "halibut", "tilapia", "trout", "mackerel", "sea bass", "sardine", "anchov", "pollock", "hake", "snapper", "sole"},
+}
+
+// mentions reports whether a recipe's title or ingredients name food
+// ("mushrooms" matches "chestnut mushroom", "pasta" matches "penne").
+func mentions(r *models.Recipe, food string) bool {
+	food = strings.ToLower(strings.TrimSpace(food))
+	if kinds, ok := foodKinds[strings.TrimSuffix(food, "s")]; ok &&
+		slices.ContainsFunc(kinds, func(k string) bool { return mentionsWord(r, k) }) {
+		return true
+	}
+	return mentionsWord(r, food)
+}
+
+func mentionsWord(r *models.Recipe, food string) bool {
+	food = strings.ToLower(strings.TrimSpace(food))
+	if food == "" {
+		return false
+	}
+	stem := food
+	switch {
+	case strings.HasSuffix(stem, "oes"): // tomatoes, potatoes
+		stem = strings.TrimSuffix(stem, "es")
+	case len(stem) > 3 && strings.HasSuffix(stem, "s"): // eggs, olives, chickpeas
+		stem = strings.TrimSuffix(stem, "s")
+	}
+	if strings.Contains(strings.ToLower(r.Title), stem) {
+		return true
+	}
+	return slices.ContainsFunc(r.Ingredients, func(i models.Ingredient) bool {
+		// Fish sauce seasons half of South-East Asia; it doesn't make a fish dish.
+		name := strings.ReplaceAll(strings.ToLower(i.Name), "fish sauce", "")
+		return strings.Contains(name, stem)
+	})
+}
+
+func relaxedNote(relaxed []string) string {
+	switch len(relaxed) {
+	case 0:
+		return ""
+	case 1:
+		return fmt.Sprintf("Nothing in your library met every requirement, so I let go of %s.", relaxed[0])
+	}
+	return fmt.Sprintf("Nothing in your library met every requirement, so I let go of %s and %s.",
+		strings.Join(relaxed[:len(relaxed)-1], ", "), relaxed[len(relaxed)-1])
+}
+
+// rankCandidates has the model read the shortlist in full and pick up to
+// limit recipes, returning them in its order with its explanation.
+func rankCandidates(ctx context.Context, client *llm.Client, conversation, situation string, candidates []models.Recipe, limit int) (RecommendResponse, error) {
+	prompt := fmt.Sprintf(libraryRankPrompt, conversation, situation, formatCandidates(candidates), limit)
+	resp, err := client.ChatJSON(ctx, []llm.Message{{Role: "user", Content: prompt}}, llm.RankSchema)
 	if err != nil {
 		return RecommendResponse{}, fmt.Errorf("rank chat failed: %w", err)
 	}
-
-	content := strings.TrimSpace(resp.Message.Content)
-	if idx := strings.Index(content, "{"); idx >= 0 {
-		if end := strings.LastIndex(content, "}"); end >= idx {
-			content = content[idx : end+1]
-		}
-	}
 	var parsed rankResponseSchema
+	content := extractJSONObject(resp.Message.Content)
 	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
 		return RecommendResponse{}, fmt.Errorf("parse rank JSON: %w, raw: %s", err, content)
 	}
 
-	// Filter to IDs that are in the candidate set, preserve LLM's ordering, dedup.
-	candidateByID := make(map[int]models.Recipe, len(candidates))
+	byID := make(map[int]models.Recipe, len(candidates))
 	for _, c := range candidates {
-		candidateByID[c.ID] = c
+		byID[c.ID] = c
 	}
-	seen := map[int]bool{}
 	picked := make([]models.Recipe, 0, limit)
 	for _, id := range parsed.RecipeIDs {
-		if seen[id] {
-			continue
-		}
-		if r, ok := candidateByID[id]; ok {
+		if r, ok := byID[id]; ok && len(picked) < limit {
 			picked = append(picked, r)
-			seen[id] = true
-			if len(picked) >= limit {
-				break
-			}
+			delete(byID, id) // drop duplicates
 		}
 	}
-	if len(picked) == 0 {
+	explanation := strings.TrimSpace(parsed.Explanation)
+	if len(picked) == 0 && explanation == "" {
 		return RecommendResponse{}, fmt.Errorf("no valid recipe IDs in rank response")
 	}
-
-	explanation := strings.TrimSpace(parsed.Explanation)
 	if explanation == "" {
 		explanation = fmt.Sprintf("Here %s %d recipe%s from your library that fit.",
 			pluralIsAre(len(picked)), len(picked), pluralS(len(picked)))
@@ -238,46 +346,26 @@ func (h *RecipeHandler) rankCandidates(ctx context.Context, client *llm.Client, 
 	return RecommendResponse{Message: explanation, Recipes: picked}, nil
 }
 
-// formatCandidates renders a compact text block describing each candidate so a
-// local LLM can rank them. Ingredient names only (no amounts), descriptions
-// truncated. Keeps the prompt small enough for 8k-context models.
+// formatCandidates renders each candidate with what the ranking needs to
+// judge it: time, ingredient count and names, and the method (for cookware
+// and effort).
 func formatCandidates(recipes []models.Recipe) string {
 	var sb strings.Builder
 	for _, r := range recipes {
-		fmt.Fprintf(&sb, "ID %d: %s", r.ID, r.Title)
-		if r.CuisineType != "" {
-			fmt.Fprintf(&sb, " (%s)", r.CuisineType)
-		}
-		total := r.PrepTimeMinutes + r.CookTimeMinutes
-		if total > 0 {
-			fmt.Fprintf(&sb, " · %d min", total)
-		}
-		if r.Servings > 0 {
-			fmt.Fprintf(&sb, " · serves %d", r.Servings)
-		}
-		sb.WriteString("\n")
-		if d := strings.TrimSpace(r.Description); d != "" {
-			if len(d) > 200 {
-				d = d[:200] + "…"
+		fmt.Fprintf(&sb, "ID %d: %s (%s, %d min, %d ingredients)\n", r.ID, r.Title, r.CuisineType,
+			r.PrepTimeMinutes+r.CookTimeMinutes, len(r.Ingredients))
+		names := make([]string, 0, len(r.Ingredients))
+		for _, ing := range r.Ingredients {
+			if n := strings.TrimSpace(ing.Name); n != "" {
+				names = append(names, n)
 			}
-			fmt.Fprintf(&sb, "  %s\n", d)
 		}
-		if len(r.DietaryRestrictions) > 0 {
-			fmt.Fprintf(&sb, "  dietary: %s\n", strings.Join(r.DietaryRestrictions, ", "))
+		fmt.Fprintf(&sb, "Ingredients: %s\n", strings.Join(names, ", "))
+		method := strings.Join(r.Instructions, " ")
+		if runes := []rune(method); len(runes) > 900 {
+			method = string(runes[:900]) + "…"
 		}
-		if len(r.Tags) > 0 {
-			fmt.Fprintf(&sb, "  tags: %s\n", strings.Join(r.Tags, ", "))
-		}
-		if len(r.Ingredients) > 0 {
-			names := make([]string, 0, len(r.Ingredients))
-			for _, ing := range r.Ingredients {
-				if n := strings.TrimSpace(ing.Name); n != "" {
-					names = append(names, n)
-				}
-			}
-			fmt.Fprintf(&sb, "  ingredients: %s\n", strings.Join(names, ", "))
-		}
-		sb.WriteString("\n")
+		fmt.Fprintf(&sb, "Method: %s\n\n", method)
 	}
 	return sb.String()
 }
