@@ -192,7 +192,9 @@
 
 /* ── Recipe browser (plan) ──────────────────────────────────────────────── */
 .plan-recipe-browser { display: flex; flex-direction: column; gap: 8px; max-height: 560px; overflow-y: auto; }
-.plan-browse-item { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--surface); transition: border-color var(--motion-quick); }
+/* flex-shrink: 0 — in the scrolling browser column, shrinkable cards with
+   overflow: hidden collapse to their borders instead of overflowing. */
+.plan-browse-item { flex-shrink: 0; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--surface); transition: border-color var(--motion-quick); }
 .plan-browse-item:hover { border-color: var(--border-strong); }
 .plan-browse-card-main { display: flex; align-items: flex-start; gap: 14px; padding: 14px 16px; }
 .plan-browse-thumb { width: 72px; height: 72px; object-fit: cover; border-radius: 7px; flex-shrink: 0; background: var(--bg-elev); }
