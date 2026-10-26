@@ -36,7 +36,7 @@ func TestDropContradictedDiets(t *testing.T) {
 				r.Ingredients = append(r.Ingredients, models.Ingredient{Name: n})
 			}
 			DropContradictedDiets(&r)
-			if !slices.Equal(r.DietaryRestrictions, tt.wantKept) && !(len(r.DietaryRestrictions) == 0 && len(tt.wantKept) == 0) {
+			if len(r.DietaryRestrictions)+len(tt.wantKept) > 0 && !slices.Equal(r.DietaryRestrictions, tt.wantKept) {
 				t.Errorf("labels = %v, want %v", r.DietaryRestrictions, tt.wantKept)
 			}
 		})

@@ -59,7 +59,7 @@ func containsWord(name, word string) bool {
 		return strings.Contains(name, word)
 	}
 	for _, w := range strings.FieldsFunc(name, func(r rune) bool {
-		return !(r >= 'a' && r <= 'z' || r >= 0xC0) // letters, keeping accented ones
+		return (r < 'a' || r > 'z') && r < 0xC0 // split on anything but letters, keeping accented ones
 	}) {
 		if w == word || w == word+"s" || w == word+"es" {
 			return true
