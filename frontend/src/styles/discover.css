@@ -20,7 +20,6 @@
 .lib-search-box:focus-within { border-color: var(--text); box-shadow: 0 0 0 3px var(--primary-soft); }
 .lib-search-box input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font: inherit; font-size: 16px; color: var(--text); }
 .lib-ask { height: 52px; }
-.lib-ask[aria-pressed="true"] { border-color: var(--text); background: var(--bg-elev); }
 
 .lib-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .lib-filters-divider { width: 1px; align-self: stretch; margin: 4px 4px; background: var(--border-strong); }

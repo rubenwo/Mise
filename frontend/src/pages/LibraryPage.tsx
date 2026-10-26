@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { Search, Sparkles } from 'lucide-react';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { ArrowLeft, Search, Sparkles } from 'lucide-react';
 import DuplicatesModal from '../components/DuplicatesModal';
 import LibraryCard from '../components/LibraryCard';
 import LibraryRecommendChat from '../components/LibraryRecommendChat';
@@ -32,10 +32,14 @@ export default function LibraryPage() {
   const cuisine = params.get('cuisine') ?? '';
   const quick = params.get('quick') === '1';
   const veg = params.get('veg') === '1';
+  const asking = params.get('ask') === '1';
+  const location = useLocation();
+  const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [debounced, setDebounced] = useState('');
   const [pages, setPages] = useState(1);
-  const [asking, setAsking] = useState(false);
+  // The chat stays mounted once opened, so its conversation survives a trip back to the grid.
+  const [askOpened, setAskOpened] = useState(asking);
   const [dedup, setDedup] = useState<null | 'loading' | Recipe[][]>(null);
   const eatCounts = useEatCounts();
   const cuisines = useFetch('cuisines', listCuisines);
@@ -53,6 +57,20 @@ export default function LibraryPage() {
       if (value) next.set(key, value); else next.delete(key);
       return next;
     }, { replace: true });
+  };
+
+  // Ask mode is a history entry, so the browser's back button leaves it too.
+  const openAsk = () => {
+    setAskOpened(true);
+    setParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.set('ask', '1');
+      return next;
+    }, { state: { ask: true } });
+  };
+  const closeAsk = () => {
+    if ((location.state as { ask?: boolean } | null)?.ask) navigate(-1);
+    else setParam('ask', '');
   };
 
   const filters = { cuisine, max_minutes: quick ? 30 : 0, dietary: veg ? 'vegetarian' : '' };
@@ -133,16 +151,25 @@ export default function LibraryPage() {
         <label className="lib-search-box">
           <Search size={18} aria-hidden="true" />
           <span className="visually-hidden">Search recipes</span>
-          <input type="search" placeholder="Search by dish or ingredient" value={query} onChange={e => { setQuery(e.target.value); setPages(1); }} />
+          <input type="search" placeholder="Search by dish or ingredient" value={query} onChange={e => { setQuery(e.target.value); setPages(1); if (asking) closeAsk(); }} />
         </label>
-        <button type="button" className="btn btn-secondary lib-ask" aria-pressed={asking} onClick={() => setAsking(a => !a)}>
-          <Sparkles size={17} aria-hidden="true" />Ask for ideas
-        </button>
+        {asking ? (
+          <button type="button" className="btn btn-secondary lib-ask" onClick={closeAsk}>
+            <ArrowLeft size={17} aria-hidden="true" />Back to library
+          </button>
+        ) : (
+          <button type="button" className="btn btn-secondary lib-ask" onClick={openAsk}>
+            <Sparkles size={17} aria-hidden="true" />Ask for ideas
+          </button>
+        )}
       </div>
 
-      {asking ? (
-        <LibraryRecommendChat limit={6} onDeleteRecipe={() => results.reload()} />
-      ) : (
+      {(asking || askOpened) && (
+        <div hidden={!asking}>
+          <LibraryRecommendChat limit={6} onDeleteRecipe={() => results.reload()} />
+        </div>
+      )}
+      {!asking && (
         <>
           <div className="lib-filters" role="group" aria-label="Filters">
             {!searching && VIEWS.map(v => (
