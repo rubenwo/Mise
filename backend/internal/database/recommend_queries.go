@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/rubenwo/mise/internal/models"
 )
 
@@ -61,16 +63,26 @@ func (q *Queries) ListRecommendRecipes(ctx context.Context) ([]RecommendRecipe, 
 	return out, rows.Err()
 }
 
-// UpsertRecipeEmbedding stores a recipe's embedding.
-func (q *Queries) UpsertRecipeEmbedding(ctx context.Context, recipeID int, model, textHash string, vec []float32) error {
-	_, err := q.pool.Exec(ctx, `
-		INSERT INTO recipe_embeddings (recipe_id, model, text_hash, embedding, updated_at)
-		VALUES ($1, $2, $3, $4, NOW())
-		ON CONFLICT (recipe_id) DO UPDATE
-		SET model = EXCLUDED.model, text_hash = EXCLUDED.text_hash,
-			embedding = EXCLUDED.embedding, updated_at = NOW()`,
-		recipeID, model, textHash, vec)
-	return err
+// RecipeEmbedding is one recipe's stored embedding.
+type RecipeEmbedding struct {
+	RecipeID int
+	TextHash string
+	Vector   []float32
+}
+
+// UpsertRecipeEmbeddings stores embeddings in one round trip.
+func (q *Queries) UpsertRecipeEmbeddings(ctx context.Context, model string, embs []RecipeEmbedding) error {
+	batch := &pgx.Batch{}
+	for _, e := range embs {
+		batch.Queue(`
+			INSERT INTO recipe_embeddings (recipe_id, model, text_hash, embedding, updated_at)
+			VALUES ($1, $2, $3, $4, NOW())
+			ON CONFLICT (recipe_id) DO UPDATE
+			SET model = EXCLUDED.model, text_hash = EXCLUDED.text_hash,
+				embedding = EXCLUDED.embedding, updated_at = NOW()`,
+			e.RecipeID, model, e.TextHash, e.Vector)
+	}
+	return q.pool.SendBatch(ctx, batch).Close()
 }
 
 // RecommendStateKey changes whenever the library or its embeddings change,

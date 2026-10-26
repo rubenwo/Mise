@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sync"
 
@@ -86,8 +87,19 @@ func (e *Embedder) Embed(ctx context.Context, texts []string) ([][]float32, erro
 	if err != nil {
 		return nil, err
 	}
+	opts, err := ort.NewSessionOptions()
+	if err != nil {
+		return nil, err
+	}
+	defer destroy(opts)
+	// ONNX Runtime defaults to one thread per physical core and knows nothing
+	// of container CPU limits; GOMAXPROCS honours both the limit and SMT,
+	// which here was worth ~30% (21 s vs 29 s for the library on 8 cores).
+	if err := opts.SetIntraOpNumThreads(runtime.GOMAXPROCS(0)); err != nil {
+		return nil, err
+	}
 	session, err := ort.NewDynamicAdvancedSession(filepath.Join(e.dir, modelFile),
-		[]string{"input_ids", "attention_mask"}, []string{"sentence_embedding"}, nil)
+		[]string{"input_ids", "attention_mask"}, []string{"sentence_embedding"}, opts)
 	if err != nil {
 		return nil, fmt.Errorf("load %s: %w", modelFile, err)
 	}

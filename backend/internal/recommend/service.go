@@ -113,13 +113,16 @@ func (s *Service) syncEmbeddings(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("embedding %d recipes: %w", len(stale), err)
 	}
+	embedded := time.Now()
+	embs := make([]database.RecipeEmbedding, len(stale))
 	for i, r := range stale {
-		if err := s.queries.UpsertRecipeEmbedding(ctx, r.ID, s.embModel, textHash(s.embModel, texts[i]), vecs[i]); err != nil {
-			return err
-		}
+		embs[i] = database.RecipeEmbedding{RecipeID: r.ID, TextHash: textHash(s.embModel, texts[i]), Vector: vecs[i]}
+	}
+	if err := s.queries.UpsertRecipeEmbeddings(ctx, s.embModel, embs); err != nil {
+		return err
 	}
 	slog.Info("embedded recipes for recommendations", "count", len(stale), "model", s.embModel,
-		"took", time.Since(start).Round(time.Millisecond))
+		"embed", embedded.Sub(start).Round(time.Millisecond), "store", time.Since(embedded).Round(time.Millisecond))
 	return nil
 }
 
