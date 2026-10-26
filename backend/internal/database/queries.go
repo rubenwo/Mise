@@ -13,10 +13,25 @@ import (
 
 type Queries struct {
 	pool *pgxpool.Pool
+	// recipesChanged runs after a recipe is created, edited or deleted.
+	recipesChanged func()
 }
 
 func NewQueries(pool *pgxpool.Pool) *Queries {
 	return &Queries{pool: pool}
+}
+
+// OnRecipesChanged registers fn to run after every recipe create, content
+// edit or delete (the recommender uses it to embed and re-cluster). Set it
+// before serving requests; fn must not block.
+func (q *Queries) OnRecipesChanged(fn func()) {
+	q.recipesChanged = fn
+}
+
+func (q *Queries) notifyRecipesChanged() {
+	if q.recipesChanged != nil {
+		q.recipesChanged()
+	}
 }
 
 func (q *Queries) CreateRecipe(ctx context.Context, r *models.Recipe) error {
@@ -38,7 +53,7 @@ func (q *Queries) CreateRecipe(ctx context.Context, r *models.Recipe) error {
 		r.Tags = []string{}
 	}
 
-	return q.pool.QueryRow(ctx, `
+	err = q.pool.QueryRow(ctx, `
 		INSERT INTO recipes (title, description, cuisine_type, prep_time_minutes, cook_time_minutes,
 			servings, difficulty, ingredients, instructions, dietary_restrictions, tags,
 			generated_by_model, generation_prompt)
@@ -48,6 +63,10 @@ func (q *Queries) CreateRecipe(ctx context.Context, r *models.Recipe) error {
 		r.Servings, r.Difficulty, ingredientsJSON, instructionsJSON,
 		r.DietaryRestrictions, r.Tags, r.GeneratedByModel, r.GenerationPrompt,
 	).Scan(&r.ID, &r.CreatedAt, &r.UpdatedAt)
+	if err == nil {
+		q.notifyRecipesChanged()
+	}
+	return err
 }
 
 func (q *Queries) SetRecipeImage(ctx context.Context, id int, imageURL string) error {
@@ -74,6 +93,7 @@ func (q *Queries) UpdateRecipeContent(ctx context.Context, id int, ingredients [
 	if tag.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+	q.notifyRecipesChanged()
 	return nil
 }
 
@@ -238,6 +258,7 @@ func (q *Queries) DeleteRecipe(ctx context.Context, id int) error {
 	if tag.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+	q.notifyRecipesChanged()
 	return nil
 }
 

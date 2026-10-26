@@ -141,6 +141,7 @@ func main() {
 		slog.Warn("embedding model not found; recommendations use ingredients only", "dir", cfg.Embedding.ModelDir)
 	}
 	recommender := recommend.NewService(queries, embedder, embedding.Model)
+	queries.OnRecipesChanged(recommender.Notify)
 	recommender.Start(ctx)
 	recommendationHandler := handlers.NewRecommendationHandler(queries, recommender)
 

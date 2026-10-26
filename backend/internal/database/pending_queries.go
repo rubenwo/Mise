@@ -135,7 +135,11 @@ func (q *Queries) ApprovePendingRecipe(ctx context.Context, pendingID int) (*mod
 		return nil, err
 	}
 
-	return &r, tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	q.notifyRecipesChanged()
+	return &r, nil
 }
 
 // RejectPendingRecipe deletes the pending recipe and returns its image_url (empty if none)

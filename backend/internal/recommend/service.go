@@ -7,12 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"slices"
+	"maps"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/rubenwo/mise/internal/database"
+	"github.com/rubenwo/mise/internal/models"
 )
 
 // Embedder turns recipe texts into unit-length vectors. The recommender's
@@ -29,13 +30,33 @@ type Embedder interface {
 // duplicate detection.
 const embedPrompt = "task: clustering | query: "
 
+// settle is how long the worker waits after a change before acting, so a
+// burst (accepting a batch of pending recipes) costs one embed and rebuild.
+const settle = 2 * time.Second
+
+// store is the slice of database.Queries the service uses.
+type store interface {
+	ListRecommendRecipes(ctx context.Context) ([]database.RecommendRecipe, error)
+	UpsertRecipeEmbeddings(ctx context.Context, model string, embs []database.RecipeEmbedding) error
+	RecommendStateKey(ctx context.Context) (string, error)
+	ListRecipeIDs(ctx context.Context) ([]int, error)
+	ListRecipeEatCounts(ctx context.Context) ([]models.RecipeEatStats, error)
+	ListSkipCounts(ctx context.Context) (map[int]int, error)
+	ListImpressionCounts(ctx context.Context) (map[int]int, error)
+	RecordImpressions(ctx context.Context, recipeIDs []int) error
+}
+
 // Service keeps recipe embeddings current and serves recommendations from a
-// cached model that is rebuilt whenever the library changes.
+// cached model. A background worker embeds and rebuilds when recipes change,
+// so requests never wait for either (except the very first build).
 type Service struct {
-	queries  *database.Queries
+	store    store
 	embedder Embedder
 	embModel string        // name stored with each embedding
-	sync     chan struct{} // requests an embedding sync
+	wake     chan struct{} // recipes changed: embed and rebuild
+	settle   time.Duration
+
+	buildMu sync.Mutex // one rebuild at a time
 
 	mu       sync.Mutex
 	model    *Model
@@ -46,29 +67,59 @@ type Service struct {
 // NewService returns a recommender that embeds recipes with e, storing them
 // under the model name embModel.
 func NewService(q *database.Queries, e Embedder, embModel string) *Service {
-	return &Service{queries: q, embedder: e, embModel: embModel, sync: make(chan struct{}, 1)}
+	return newService(q, e, embModel)
 }
 
-// Start embeds new or edited recipes at startup and whenever a model rebuild
-// finds recipes without a current embedding (see currentModel), with a daily
-// sweep as a safety net. A new recipe is recommendable straight away on
-// TF-IDF and gains its embedding moments later.
+func newService(st store, e Embedder, embModel string) *Service {
+	return &Service{store: st, embedder: e, embModel: embModel, wake: make(chan struct{}, 1), settle: settle}
+}
+
+// Notify tells the service that recipes changed. It returns at once; the
+// worker embeds the changes and rebuilds the model in the background.
+func (s *Service) Notify() {
+	select {
+	case s.wake <- struct{}{}:
+	default: // already pending
+	}
+}
+
+// Start runs the worker: at startup, after every Notify (once changes
+// settle), and daily as a safety net, it embeds recipes whose text changed
+// and rebuilds the model if the library moved on.
 func (s *Service) Start(ctx context.Context) {
 	go func() {
 		ticker := time.NewTicker(24 * time.Hour)
 		defer ticker.Stop()
 		for {
-			if err := s.syncEmbeddings(ctx); err != nil && ctx.Err() == nil {
-				slog.Warn("recipe embedding sync failed", "err", err)
-			}
+			s.update(ctx)
 			select {
 			case <-ctx.Done():
 				return
-			case <-s.sync:
 			case <-ticker.C:
+			case <-s.wake:
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(s.settle):
+				}
+				// Changes during the wait are covered by this pass.
+				select {
+				case <-s.wake:
+				default:
+				}
 			}
 		}
 	}()
+}
+
+// update embeds stale recipes, then rebuilds the model if anything changed.
+func (s *Service) update(ctx context.Context) {
+	if err := s.syncEmbeddings(ctx); err != nil && ctx.Err() == nil {
+		slog.Warn("recipe embedding sync failed", "err", err)
+	}
+	if err := s.rebuild(ctx); err != nil && ctx.Err() == nil {
+		slog.Warn("recommendation model rebuild failed", "err", err)
+	}
 }
 
 func embedText(r database.RecommendRecipe) string {
@@ -93,7 +144,7 @@ func (s *Service) syncEmbeddings(ctx context.Context) error {
 	if !s.embedder.Available() {
 		return nil
 	}
-	recipes, err := s.queries.ListRecommendRecipes(ctx)
+	recipes, err := s.store.ListRecommendRecipes(ctx)
 	if err != nil {
 		return err
 	}
@@ -118,7 +169,7 @@ func (s *Service) syncEmbeddings(ctx context.Context) error {
 	for i, r := range stale {
 		embs[i] = database.RecipeEmbedding{RecipeID: r.ID, TextHash: textHash(s.embModel, texts[i]), Vector: vecs[i]}
 	}
-	if err := s.queries.UpsertRecipeEmbeddings(ctx, s.embModel, embs); err != nil {
+	if err := s.store.UpsertRecipeEmbeddings(ctx, s.embModel, embs); err != nil {
 		return err
 	}
 	slog.Info("embedded recipes for recommendations", "count", len(stale), "model", s.embModel,
@@ -126,21 +177,25 @@ func (s *Service) syncEmbeddings(ctx context.Context) error {
 	return nil
 }
 
-// currentModel returns the cached model, rebuilding it if the library or
-// embeddings changed since it was built.
-func (s *Service) currentModel(ctx context.Context) (*Model, error) {
-	key, err := s.queries.RecommendStateKey(ctx)
+// rebuild builds a model from the current library unless the cached one is
+// already current, and swaps it in. Requests keep using the old model while
+// it runs.
+func (s *Service) rebuild(ctx context.Context) error {
+	s.buildMu.Lock()
+	defer s.buildMu.Unlock()
+	key, err := s.store.RecommendStateKey(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.model != nil && s.modelKey == key {
-		return s.model, nil
+	current := s.model != nil && s.modelKey == key
+	s.mu.Unlock()
+	if current {
+		return nil
 	}
-	rows, err := s.queries.ListRecommendRecipes(ctx)
+	rows, err := s.store.ListRecommendRecipes(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	// Mixed models would make embeddings incomparable; use the most common one.
 	modelCount := map[string]int{}
@@ -163,22 +218,39 @@ func (s *Service) currentModel(ctx context.Context) (*Model, error) {
 		}
 	}
 	start := time.Now()
-	s.model = Build(recipes, 1)
-	s.modelKey = key
-	s.builtEmb = embModel
-
-	// Recipes added or edited since their last embedding: sync them in the
-	// background; the sync changes the state key, so the next request
-	// rebuilds with the fresh embeddings.
-	if s.embedder.Available() && slices.ContainsFunc(rows, s.stale) {
-		select {
-		case s.sync <- struct{}{}:
-		default: // a sync is already pending
-		}
-	}
-	slog.Info("built recommendation model", "recipes", len(recipes), "families", s.model.Families(),
+	m := Build(recipes, 1)
+	s.mu.Lock()
+	s.model, s.modelKey, s.builtEmb = m, key, embModel
+	s.mu.Unlock()
+	slog.Info("built recommendation model", "recipes", len(recipes), "families", m.Families(),
 		"embeddings", modelCount[embModel], "took", time.Since(start).Round(time.Millisecond))
-	return s.model, nil
+	return nil
+}
+
+// currentModel returns the cached model and whether the library has changed
+// since it was built. Only the first call builds synchronously; after that a
+// change wakes the worker and the request carries on with the cached model.
+func (s *Service) currentModel(ctx context.Context) (*Model, bool, error) {
+	s.mu.Lock()
+	m, built := s.model, s.modelKey
+	s.mu.Unlock()
+	if m == nil {
+		if err := s.rebuild(ctx); err != nil {
+			return nil, false, err
+		}
+		s.mu.Lock()
+		m, built = s.model, s.modelKey
+		s.mu.Unlock()
+	}
+	key, err := s.store.RecommendStateKey(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	if key != built {
+		s.Notify() // a change the save hooks didn't see, e.g. a direct DB edit
+		return m, true, nil
+	}
+	return m, false, nil
 }
 
 // ErrNoRecipes is returned when the library is empty.
@@ -186,12 +258,34 @@ var ErrNoRecipes = errors.New("no recipes to recommend")
 
 // Recommend returns picks using the user's current cook history.
 func (s *Service) Recommend(ctx context.Context, opt Options) ([]Pick, error) {
-	m, err := s.currentModel(ctx)
+	m, outdated, err := s.currentModel(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if len(m.recipes) == 0 {
 		return nil, ErrNoRecipes
+	}
+	if outdated {
+		// The cached model may still hold recipes deleted since; a pick of
+		// one would break plan filling.
+		ids, err := s.store.ListRecipeIDs(ctx)
+		if err != nil {
+			return nil, err
+		}
+		exists := make(map[int]bool, len(ids))
+		for _, id := range ids {
+			exists[id] = true
+		}
+		exclude := maps.Clone(opt.Exclude)
+		if exclude == nil {
+			exclude = map[int]bool{}
+		}
+		for _, r := range m.recipes {
+			if !exists[r.ID] {
+				exclude[r.ID] = true
+			}
+		}
+		opt.Exclude = exclude
 	}
 	fb, err := s.feedback(ctx)
 	if err != nil {
@@ -201,15 +295,15 @@ func (s *Service) Recommend(ctx context.Context, opt Options) ([]Pick, error) {
 }
 
 func (s *Service) feedback(ctx context.Context) (map[int]Feedback, error) {
-	stats, err := s.queries.ListRecipeEatCounts(ctx)
+	stats, err := s.store.ListRecipeEatCounts(ctx)
 	if err != nil {
 		return nil, err
 	}
-	skips, err := s.queries.ListSkipCounts(ctx)
+	skips, err := s.store.ListSkipCounts(ctx)
 	if err != nil {
 		return nil, err
 	}
-	impressions, err := s.queries.ListImpressionCounts(ctx)
+	impressions, err := s.store.ListImpressionCounts(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -243,7 +337,7 @@ type Status struct {
 // Status reports how many recipes the model covers, how many of them have
 // embeddings and how many flavour families it found.
 func (s *Service) Status(ctx context.Context) (Status, error) {
-	m, err := s.currentModel(ctx)
+	m, _, err := s.currentModel(ctx)
 	if err != nil {
 		return Status{}, err
 	}
@@ -261,7 +355,7 @@ func (s *Service) Status(ctx context.Context) (Status, error) {
 
 // RecordImpressions notes that the given recipes were shown to the user today.
 func (s *Service) RecordImpressions(ctx context.Context, ids []int) error {
-	return s.queries.RecordImpressions(ctx, ids)
+	return s.store.RecordImpressions(ctx, ids)
 }
 
 // DaySeed returns a seed that is stable for one calendar day, so picks don't

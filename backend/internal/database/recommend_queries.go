@@ -106,6 +106,24 @@ func (q *Queries) RecommendStateKey(ctx context.Context) (string, error) {
 	return fmt.Sprintf("%d/%d/%d/%d", recipes, stamp(recipesAt), embeddings, stamp(embeddingsAt)), nil
 }
 
+// ListRecipeIDs returns the id of every library recipe.
+func (q *Queries) ListRecipeIDs(ctx context.Context) ([]int, error) {
+	rows, err := q.pool.Query(ctx, "SELECT id FROM recipes")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // ListSkipCounts returns how often each recipe was planned and then marked
 // "not making it".
 func (q *Queries) ListSkipCounts(ctx context.Context) (map[int]int, error) {
