@@ -23,6 +23,8 @@ type BackgroundTranslator struct {
 	queries    *database.Queries
 	translator *translation.Translator
 	stop       chan struct{}
+	// OnRunDone, if set, runs after each scheduled run (to free the model).
+	OnRunDone func()
 }
 
 func NewBackgroundTranslator(q *database.Queries, t *translation.Translator) *BackgroundTranslator {
@@ -70,6 +72,9 @@ func (b *BackgroundTranslator) Start(ctx context.Context) {
 				log.Printf("BackgroundTranslator: starting (langs=%v)", langs)
 				for _, lang := range langs {
 					b.runTranslation(ctx, lang)
+				}
+				if b.OnRunDone != nil {
+					b.OnRunDone()
 				}
 
 			case <-b.stop:

@@ -10,9 +10,13 @@ import PendingPage from './pages/PendingPage';
 import RecipePage from './pages/RecipePage';
 import SettingsPage from './pages/settings';
 import { listPendingRecipes } from './api/client';
+import { startPresence } from './hooks/usePresence';
 
 export default function App() {
   const [pendingCount, setPendingCount] = useState(0);
+
+  // Lets the backend load the LLM ahead of use and free it when you leave.
+  useEffect(() => startPresence(), []);
 
   useEffect(() => {
     const controller = new AbortController();

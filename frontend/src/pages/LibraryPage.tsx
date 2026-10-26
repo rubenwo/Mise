@@ -9,6 +9,7 @@ import {
   findDuplicates, getFavourites, getRecommendations, librarySearch, listCuisines, listRecipes, recordImpressions,
 } from '../api/client';
 import { useEatCounts } from '../hooks/useEatCounts';
+import { useIntent } from '../hooks/usePresence';
 import { errorMessage, useFetch } from '../hooks/useFetch';
 import type { Recipe } from '../types';
 
@@ -40,6 +41,7 @@ export default function LibraryPage() {
   const [pages, setPages] = useState(1);
   // The chat stays mounted once opened, so its conversation survives a trip back to the grid.
   const [askOpened, setAskOpened] = useState(asking);
+  useIntent('search', asking);
   const [dedup, setDedup] = useState<null | 'loading' | Recipe[][]>(null);
   const eatCounts = useEatCounts();
   const cuisines = useFetch('cuisines', listCuisines);

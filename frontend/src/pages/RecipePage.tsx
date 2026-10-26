@@ -2,10 +2,14 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { getRecipe, deleteRecipe } from '../api/client';
 import { errorMessage, useFetch } from '../hooks/useFetch';
 import RecipeDetail from '../components/RecipeDetail';
+import { useIntent } from '../hooks/usePresence';
 
 export default function RecipePage() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
+  // The cooking chat is where waiting for the model to load hurts most, so a
+  // recipe page warms it straight away.
+  useIntent('chat');
   const { data: recipe, loading, error } = useFetch(`recipe:${id}`, signal => getRecipe(id, signal));
 
   const handleDelete = async () => {

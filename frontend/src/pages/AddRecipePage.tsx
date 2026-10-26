@@ -9,6 +9,7 @@ import RecipeCard from '../components/RecipeCard';
 import RecipeEditForm, { type RecipeContentEdit } from '../components/RecipeEditForm';
 import { errorMessage } from '../hooks/useFetch';
 import { useGeneration } from '../hooks/useGeneration';
+import { useIntent } from '../hooks/usePresence';
 import type { Recipe } from '../types';
 
 const TABS = ['generate', 'import', 'manual'] as const;
@@ -316,6 +317,7 @@ export default function AddRecipePage() {
   const tab: Tab = isTab(mode) ? mode : 'generate';
   const setTab = (t: Tab) => setSearchParams(p => { p.set('mode', t); return p; }, { replace: true });
   const initialNotes = searchParams.get('notes') || '';
+  useIntent('generation');
 
   return (
     <div className="generate-page">

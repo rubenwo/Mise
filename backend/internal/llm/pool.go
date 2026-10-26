@@ -24,10 +24,13 @@ type ClientPool struct {
 	mu      sync.Mutex
 	clients []*Client
 	next    int
+	// residencies outlive Reload so the Warmer keeps track of models Mise
+	// loaded before a settings change.
+	residencies map[string]*residency
 }
 
 func NewClientPool(providers []ProviderConfig) *ClientPool {
-	p := &ClientPool{}
+	p := &ClientPool{residencies: map[string]*residency{}}
 	p.buildClients(providers)
 	return p
 }
@@ -35,7 +38,14 @@ func NewClientPool(providers []ProviderConfig) *ClientPool {
 func (p *ClientPool) buildClients(providers []ProviderConfig) {
 	clients := make([]*Client, 0, len(providers))
 	for _, prov := range providers {
-		clients = append(clients, NewClient(prov))
+		c := NewClient(prov)
+		key := residencyKey(prov.Host, prov.Model)
+		if r, ok := p.residencies[key]; ok {
+			c.res = r
+		} else {
+			p.residencies[key] = c.res
+		}
+		clients = append(clients, c)
 	}
 	p.clients = clients
 	p.next = 0
@@ -83,6 +93,19 @@ func (p *ClientPool) AcquireWithTag(tag string) *Client {
 		c := p.clients[idx]
 		if c.healthy.Load() && c.hasTag(tag) {
 			p.next = idx + 1
+			return c
+		}
+	}
+	return nil
+}
+
+// clientForTag returns the first healthy client with tag without advancing
+// the round-robin, for looking at a feature's model rather than calling it.
+func (p *ClientPool) clientForTag(tag string) *Client {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, c := range p.clients {
+		if c.healthy.Load() && c.hasTag(tag) {
 			return c
 		}
 	}

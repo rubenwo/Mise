@@ -22,6 +22,8 @@ type BackgroundGenerator struct {
 	hub           *llm.Hub
 	imageSearcher *tools.ImageSearcher
 	stop          chan struct{}
+	// OnRunDone, if set, runs after each scheduled run (to free the model).
+	OnRunDone func()
 }
 
 func NewBackgroundGenerator(q *database.Queries, o *llm.Orchestrator, hub *llm.Hub, imageSearcher *tools.ImageSearcher) *BackgroundGenerator {
@@ -80,6 +82,9 @@ func (b *BackgroundGenerator) Start(ctx context.Context) {
 				nextRun := todayTarget.Add(24 * time.Hour)
 				log.Printf("Background generation: starting %d recipe(s)", s.count)
 				b.runGeneration(ctx, s.count, s.servings, s.maxRetries, nextRun)
+				if b.OnRunDone != nil {
+					b.OnRunDone()
+				}
 
 			case <-b.stop:
 				return

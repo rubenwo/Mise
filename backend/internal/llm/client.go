@@ -37,6 +37,9 @@ type Client struct {
 	// it. Structured (ChatJSON) calls never think: reasoning models such as
 	// gemma4 otherwise spend thousands of tokens on trivial tasks.
 	think bool
+	// res tracks Mise's use of the model for the Warmer; clients of one
+	// pool that share a host and model share it.
+	res *residency
 }
 
 func NewClient(cfg ProviderConfig) *Client {
@@ -51,6 +54,7 @@ func NewClient(cfg ProviderConfig) *Client {
 		tags:       cfg.Tags,
 		numCtx:     cfg.NumCtx,
 		think:      cfg.Think,
+		res:        &residency{},
 	}
 	c.healthy.Store(true)
 	return c
@@ -98,8 +102,9 @@ type ollamaChatRequest struct {
 	Format   json.RawMessage `json:"format,omitempty"` // "json" or a JSON schema
 	// Think is always sent: some models (gemma4) reason by default when it is
 	// omitted. Models without thinking support ignore false.
-	Think   bool           `json:"think"`
-	Options *ollamaOptions `json:"options,omitempty"`
+	Think     bool           `json:"think"`
+	Options   *ollamaOptions `json:"options,omitempty"`
+	KeepAlive int            `json:"keep_alive"` // seconds
 }
 
 type ollamaOptions struct {
@@ -230,6 +235,9 @@ func (c *Client) ChatJSON(ctx context.Context, messages []Message, schema *Schem
 // ---- Ollama implementation ----
 
 func (c *Client) doChatOllama(ctx context.Context, req ollamaChatRequest) (*ChatResponse, error) {
+	req.KeepAlive = int(keepAlive.Seconds())
+	c.res.begin()
+	defer c.res.end(keepAlive)
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling request: %w", err)

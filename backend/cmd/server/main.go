@@ -100,6 +100,11 @@ func main() {
 
 	// Start background health checker: probes immediately, then every 30s.
 	clientPool.StartHealthChecker(ctx, 30*time.Second, queries)
+
+	// Loads the interactive model ahead of use while the user browses (the
+	// frontend reports presence) and frees it when they leave.
+	warmer := llm.NewWarmer(clientPool)
+	warmer.Start(ctx)
 	log.Println("Health checker started")
 
 	// Ensure models in the background — pulling can take minutes and must not
@@ -152,10 +157,12 @@ func main() {
 	pendingHandler := handlers.NewPendingHandler(queries, imageSearcher, hub)
 
 	bgGenerator := handlers.NewBackgroundGenerator(queries, orchestrator, hub, imageSearcher)
+	bgGenerator.OnRunDone = func() { warmer.BackgroundDone("background-generation") }
 	bgGenerator.Start(ctx)
 	log.Println("Background recipe generator started")
 
 	bgTranslator := handlers.NewBackgroundTranslator(queries, translator)
+	bgTranslator.OnRunDone = func() { warmer.BackgroundDone("translation") }
 	bgTranslator.Start(ctx)
 	log.Println("Background translation job started")
 
@@ -163,7 +170,7 @@ func main() {
 
 	inventoryHandler := handlers.NewInventoryHandler(queries, orchestrator)
 
-	router := server.NewRouter(recipeHandler, generateHandler, mealPlanHandler, settingsHandler, pendingHandler, chatHandler, bgTranslator, inventoryHandler, recommendationHandler, cfg.Server.CORSOrigin, cfg.Server.ImagesDir)
+	router := server.NewRouter(recipeHandler, generateHandler, mealPlanHandler, settingsHandler, pendingHandler, chatHandler, bgTranslator, inventoryHandler, recommendationHandler, handlers.NewPresenceHandler(warmer), cfg.Server.CORSOrigin, cfg.Server.ImagesDir)
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.Server.Port),
