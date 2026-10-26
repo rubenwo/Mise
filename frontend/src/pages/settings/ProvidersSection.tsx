@@ -3,7 +3,7 @@ import { createProvider, deleteProvider, listModels, listProviders, updateProvid
 import { errorMessage, useFetch } from '../../hooks/useFetch';
 import type { Provider, ProviderInput, ProviderType } from '../../types';
 
-const KNOWN_TAGS = ['generation', 'background-generation', 'chat', 'search', 'translation', 'inventory', 'deduplication', 'embedding'];
+const KNOWN_TAGS = ['generation', 'background-generation', 'chat', 'search', 'translation', 'inventory', 'deduplication'];
 
 const EMPTY_FORM: Omit<ProviderInput, 'enabled'> = { name: '', host: '', model: '', provider_type: 'ollama', tags: [] };
 

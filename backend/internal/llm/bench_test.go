@@ -47,9 +47,9 @@ type bTask struct {
 var allowedUnits = []string{"g", "kg", "ml", "l", "tsp", "tbsp", "", "clove", "pinch", "bunch", "sprig", "can", "slice", "stalk", "piece", "leaf", "sheet", "head", "stick"}
 
 var (
-	animalWords = regexp.MustCompile(`\b(chicken|beef|pork|lamb|bacon|ham|guanciale|pancetta|sausage|fish|salmon|tuna|anchov\w*|shrimp|prawn\w*|egg|eggs|butter|milk|cream|cheese|parmesan|pecorino|mozzarella|ricotta|yogh?urt|honey|gelatin\w*|lard|ghee)\b`)
-	glutenWords = regexp.MustCompile(`\b(flour|wheat|bread\w*|pasta|spaghetti|noodle\w*|couscous|barley|bulgur|semolina|panko|soy sauce|beer|seitan)\b`)
-	glutenSafe  = regexp.MustCompile(`gluten[- ]free|tamari|rice noodle|rice flour|corn flour|cornflour|chickpea flour|almond flour|buckwheat`)
+	benchAnimalRe     = regexp.MustCompile(`\b(chicken|beef|pork|lamb|bacon|ham|guanciale|pancetta|sausage|fish|salmon|tuna|anchov\w*|shrimp|prawn\w*|egg|eggs|butter|milk|cream|cheese|parmesan|pecorino|mozzarella|ricotta|yogh?urt|honey|gelatin\w*|lard|ghee)\b`)
+	benchGlutenRe     = regexp.MustCompile(`\b(flour|wheat|bread\w*|pasta|spaghetti|noodle\w*|couscous|barley|bulgur|semolina|panko|soy sauce|beer|seitan)\b`)
+	benchGlutenSafeRe = regexp.MustCompile(`gluten[- ]free|tamari|rice noodle|rice flour|corn flour|cornflour|chickpea flour|almond flour|buckwheat`)
 )
 
 // checks scores a generated recipe; each failed check costs an equal share.
@@ -176,7 +176,7 @@ func TestBenchmark(t *testing.T) {
 			plant := regexp.MustCompile(`vegan|plant|dairy-free|non-dairy|oat|soy|almond|cashew|coconut|nutritional`)
 			for _, ing := range r.Ingredients {
 				text := strings.ToLower(ing.Name + " " + ing.Notes)
-				if animalWords.MatchString(text) && !plant.MatchString(text) {
+				if benchAnimalRe.MatchString(text) && !plant.MatchString(text) {
 					issues = append(issues, "animal product: "+ing.Name)
 				}
 			}
@@ -189,8 +189,8 @@ func TestBenchmark(t *testing.T) {
 		nil, 3, func(r *models.Recipe) []string {
 			var issues []string
 			text := ingredientText(r)
-			for _, m := range glutenWords.FindAllString(text, -1) {
-				if !glutenSafe.MatchString(text) {
+			for _, m := range benchGlutenRe.FindAllString(text, -1) {
+				if !benchGlutenSafeRe.MatchString(text) {
 					issues = append(issues, "gluten: "+m)
 				}
 			}

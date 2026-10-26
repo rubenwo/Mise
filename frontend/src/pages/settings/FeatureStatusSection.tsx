@@ -47,9 +47,9 @@ const FEATURE_DEFS: FeatureDef[] = [
     detail: 'LLM-based ingredient deduplication for shopping lists',
   },
   {
-    tag: 'embedding',
+    tag: 'recommendations',
     label: 'Recommendations',
-    detail: 'Flavour-aware "New to you" picks (optional embedding model; without it picks use ingredients only)',
+    detail: 'Flavour-aware "New to you" picks, embedded on the server\'s CPU (without the model, picks use ingredients only)',
   },
 ];
 
@@ -57,9 +57,14 @@ export default function FeatureStatusSection() {
   const { data, error } = useFetch('features', getFeatureStatus);
   const rec = useFetch('recommendation-status', getRecommendationStatus);
   // On failure, show every feature as unconfigured rather than hiding the section.
-  const status = data ?? (error ? {} : null);
+  const providerStatus = data ?? (error ? {} : null);
 
-  if (!status) return null;
+  if (!providerStatus || (!rec.data && !rec.error)) return null;
+  // Recommendations run in-process rather than on a provider.
+  const status: Record<string, string> = {
+    ...providerStatus,
+    recommendations: rec.data?.embedder_ready ? 'available' : rec.error ? 'offline' : 'unconfigured',
+  };
 
   const unavailable = FEATURE_DEFS.filter(f => status[f.tag] !== 'available');
 
@@ -79,7 +84,7 @@ export default function FeatureStatusSection() {
               <div className="feature-status-info">
                 <span className="feature-status-label">{f.label}</span>
                 <span className="feature-status-detail">{f.detail}</span>
-                {f.tag === 'embedding' && rec.data && (
+                {f.tag === 'recommendations' && rec.data && (
                   <span className="feature-status-detail">
                     {rec.data.recipes} recipes in {rec.data.families} flavour families · {rec.data.embedded} embedded
                     {rec.data.embedding_model && ` with ${rec.data.embedding_model}`}

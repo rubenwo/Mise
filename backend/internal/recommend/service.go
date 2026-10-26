@@ -7,36 +7,46 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/rubenwo/mise/internal/database"
-	"github.com/rubenwo/mise/internal/llm"
 )
 
-// EmbeddingTag is the provider tag that serves recipe embeddings.
-const EmbeddingTag = "embedding"
+// Embedder turns recipe texts into unit-length vectors. The recommender's
+// blend weight and same-dish percentiles were measured on EmbeddingGemma, so
+// the server always runs that model (package embedding) rather than a
+// configurable one.
+type Embedder interface {
+	Available() bool
+	Embed(ctx context.Context, texts []string) ([][]float32, error)
+}
 
-// embedBatch recipes go in one request. Large batches matter because the
-// model is unloaded after every request (keep_alive 0).
-const embedBatch = 256
+// embedPrompt is EmbeddingGemma's clustering task prompt. On the recipe
+// benchmark it improved flavour structure (AUC 0.933 → 0.953) at no cost to
+// duplicate detection.
+const embedPrompt = "task: clustering | query: "
 
 // Service keeps recipe embeddings current and serves recommendations from a
 // cached model that is rebuilt whenever the library changes.
 type Service struct {
-	queries *database.Queries
-	pool    *llm.ClientPool
-	sync    chan struct{} // requests an embedding sync
+	queries  *database.Queries
+	embedder Embedder
+	embModel string        // name stored with each embedding
+	sync     chan struct{} // requests an embedding sync
 
 	mu       sync.Mutex
 	model    *Model
 	modelKey string
-	embModel string // embedding model the cached model was built with
+	builtEmb string // embedding model the cached model was built with
 }
 
-func NewService(q *database.Queries, pool *llm.ClientPool) *Service {
-	return &Service{queries: q, pool: pool, sync: make(chan struct{}, 1)}
+// NewService returns a recommender that embeds recipes with e, storing them
+// under the model name embModel.
+func NewService(q *database.Queries, e Embedder, embModel string) *Service {
+	return &Service{queries: q, embedder: e, embModel: embModel, sync: make(chan struct{}, 1)}
 }
 
 // Start embeds new or edited recipes at startup and whenever a model rebuild
@@ -61,23 +71,14 @@ func (s *Service) Start(ctx context.Context) {
 	}()
 }
 
-// embedPrefix is the task instruction a model expects for clustering-style
-// similarity. On the recipe benchmark EmbeddingGemma's clustering prompt
-// improved flavour structure (AUC 0.933 → 0.953) at no cost to duplicate
-// detection; models without a documented prompt get none.
-func embedPrefix(model string) string {
-	switch {
-	case strings.HasPrefix(model, "embeddinggemma"):
-		return "task: clustering | query: "
-	case strings.HasPrefix(model, "nomic-embed-text"):
-		return "clustering: "
-	}
-	return ""
+func embedText(r database.RecommendRecipe) string {
+	return embedPrompt + fmt.Sprintf("%s. %s Cuisine: %s. Ingredients: %s.",
+		r.Title, r.Description, r.Cuisine, strings.Join(r.Ingredients, ", "))
 }
 
-func embedText(model string, r database.RecommendRecipe) string {
-	return embedPrefix(model) + fmt.Sprintf("%s. %s Cuisine: %s. Ingredients: %s.",
-		r.Title, r.Description, r.Cuisine, strings.Join(r.Ingredients, ", "))
+// stale reports whether r lacks an embedding of its current text.
+func (s *Service) stale(r database.RecommendRecipe) bool {
+	return r.TextHash != textHash(s.embModel, embedText(r))
 }
 
 func textHash(model, text string) string {
@@ -86,11 +87,10 @@ func textHash(model, text string) string {
 }
 
 // syncEmbeddings embeds every recipe whose text or model changed since it
-// was last embedded. Without an embedding provider it does nothing and the
+// was last embedded. Without the model files it does nothing and the
 // recommender runs on ingredient TF-IDF alone.
 func (s *Service) syncEmbeddings(ctx context.Context) error {
-	client := s.pool.AcquireWithTag(EmbeddingTag)
-	if client == nil {
+	if !s.embedder.Available() {
 		return nil
 	}
 	recipes, err := s.queries.ListRecommendRecipes(ctx)
@@ -98,30 +98,28 @@ func (s *Service) syncEmbeddings(ctx context.Context) error {
 		return err
 	}
 	var stale []database.RecommendRecipe
+	var texts []string
 	for _, r := range recipes {
-		if r.TextHash != textHash(client.Model(), embedText(client.Model(), r)) {
+		if s.stale(r) {
 			stale = append(stale, r)
+			texts = append(texts, embedText(r))
 		}
 	}
-	for start := 0; start < len(stale); start += embedBatch {
-		batch := stale[start:min(start+embedBatch, len(stale))]
-		texts := make([]string, len(batch))
-		for i, r := range batch {
-			texts[i] = embedText(client.Model(), r)
-		}
-		vecs, err := client.Embed(ctx, texts)
-		if err != nil {
-			return fmt.Errorf("embedding %d recipes: %w", len(batch), err)
-		}
-		for i, r := range batch {
-			if err := s.queries.UpsertRecipeEmbedding(ctx, r.ID, client.Model(), textHash(client.Model(), texts[i]), vecs[i]); err != nil {
-				return err
-			}
+	if len(stale) == 0 {
+		return nil
+	}
+	start := time.Now()
+	vecs, err := s.embedder.Embed(ctx, texts)
+	if err != nil {
+		return fmt.Errorf("embedding %d recipes: %w", len(stale), err)
+	}
+	for i, r := range stale {
+		if err := s.queries.UpsertRecipeEmbedding(ctx, r.ID, s.embModel, textHash(s.embModel, texts[i]), vecs[i]); err != nil {
+			return err
 		}
 	}
-	if len(stale) > 0 {
-		slog.Info("embedded recipes for recommendations", "count", len(stale), "model", client.Model())
-	}
+	slog.Info("embedded recipes for recommendations", "count", len(stale), "model", s.embModel,
+		"took", time.Since(start).Round(time.Millisecond))
 	return nil
 }
 
@@ -164,20 +162,15 @@ func (s *Service) currentModel(ctx context.Context) (*Model, error) {
 	start := time.Now()
 	s.model = Build(recipes, 1)
 	s.modelKey = key
-	s.embModel = embModel
+	s.builtEmb = embModel
 
 	// Recipes added or edited since their last embedding: sync them in the
 	// background; the sync changes the state key, so the next request
 	// rebuilds with the fresh embeddings.
-	if client := s.pool.AcquireWithTag(EmbeddingTag); client != nil {
-		for _, r := range rows {
-			if r.TextHash != textHash(client.Model(), embedText(client.Model(), r)) {
-				select {
-				case s.sync <- struct{}{}:
-				default: // a sync is already pending
-				}
-				break
-			}
+	if s.embedder.Available() && slices.ContainsFunc(rows, s.stale) {
+		select {
+		case s.sync <- struct{}{}:
+		default: // a sync is already pending
 		}
 	}
 	slog.Info("built recommendation model", "recipes", len(recipes), "families", s.model.Families(),
@@ -240,6 +233,8 @@ type Status struct {
 	Embedded int    `json:"embedded"`
 	Model    string `json:"embedding_model"`
 	Families int    `json:"families"`
+	// EmbedderReady is false when the image lacks the model files.
+	EmbedderReady bool `json:"embedder_ready"`
 }
 
 // Status reports how many recipes the model covers, how many of them have
@@ -249,14 +244,14 @@ func (s *Service) Status(ctx context.Context) (Status, error) {
 	if err != nil {
 		return Status{}, err
 	}
-	st := Status{Recipes: len(m.recipes), Families: m.Families()}
+	st := Status{Recipes: len(m.recipes), Families: m.Families(), EmbedderReady: s.embedder.Available()}
 	for _, e := range m.emb {
 		if e != nil {
 			st.Embedded++
 		}
 	}
 	s.mu.Lock()
-	st.Model = s.embModel
+	st.Model = s.builtEmb
 	s.mu.Unlock()
 	return st, nil
 }

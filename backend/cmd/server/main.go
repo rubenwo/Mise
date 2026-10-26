@@ -15,6 +15,7 @@ import (
 
 	"github.com/rubenwo/mise/internal/config"
 	"github.com/rubenwo/mise/internal/database"
+	"github.com/rubenwo/mise/internal/embedding"
 	"github.com/rubenwo/mise/internal/handlers"
 	"github.com/rubenwo/mise/internal/llm"
 	"github.com/rubenwo/mise/internal/models"
@@ -129,13 +130,17 @@ func main() {
 	imageSearcher := tools.NewImageSearcher(cfg.Search.Timeout, cfg.Server.ImagesDir)
 	recipeHandler := handlers.NewRecipeHandler(queries, imageSearcher, clientPool)
 	generateHandler := handlers.NewGenerateHandler(orchestrator, queries)
-	// Recommendations: embeds recipes via an "embedding"-tagged provider and
-	// clusters the library into flavour families for "New to you" picks.
 	// Remove dietary labels the ingredients contradict (e.g. gluten-free with
 	// soy sauce) from recipes saved before generation checked for it.
 	go llm.SweepDietaryLabels(ctx, queries)
 
-	recommender := recommend.NewService(queries, clientPool)
+	// Recommendations: embeds recipes with EmbeddingGemma on the CPU and
+	// clusters the library into flavour families for "New to you" picks.
+	embedder := embedding.New(cfg.Embedding.ModelDir, cfg.Embedding.RuntimeLib)
+	if !embedder.Available() {
+		slog.Warn("embedding model not found; recommendations use ingredients only", "dir", cfg.Embedding.ModelDir)
+	}
+	recommender := recommend.NewService(queries, embedder, embedding.Model)
 	recommender.Start(ctx)
 	recommendationHandler := handlers.NewRecommendationHandler(queries, recommender)
 

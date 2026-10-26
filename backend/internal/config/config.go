@@ -11,11 +11,19 @@ import (
 )
 
 type Config struct {
-	Server   ServerConfig   `yaml:"server"`
-	Database DatabaseConfig `yaml:"database"`
-	Ollama   OllamaConfig   `yaml:"ollama"`
-	Search   SearchConfig   `yaml:"search"`
-	Edamam   EdamamConfig   `yaml:"edamam"`
+	Server    ServerConfig    `yaml:"server"`
+	Database  DatabaseConfig  `yaml:"database"`
+	Ollama    OllamaConfig    `yaml:"ollama"`
+	Search    SearchConfig    `yaml:"search"`
+	Edamam    EdamamConfig    `yaml:"edamam"`
+	Embedding EmbeddingConfig `yaml:"embedding"`
+}
+
+// EmbeddingConfig locates the in-process EmbeddingGemma model; the defaults
+// match the Docker image.
+type EmbeddingConfig struct {
+	ModelDir   string `yaml:"model_dir"`
+	RuntimeLib string `yaml:"onnxruntime_lib"`
 }
 
 type ServerConfig struct {
@@ -90,6 +98,10 @@ func Load(path string) (*Config, error) {
 		Search: SearchConfig{
 			Timeout:  10 * time.Second,
 			CacheTTL: 5 * time.Minute,
+		},
+		Embedding: EmbeddingConfig{
+			ModelDir:   "/app/models/embeddinggemma",
+			RuntimeLib: "/usr/lib/libonnxruntime.so",
 		},
 	}
 

@@ -218,6 +218,7 @@ export interface RecommendationStatus {
   embedded: number;
   embedding_model: string;
   families: number;
+  embedder_ready: boolean;
 }
 
 export function getRecommendationStatus(signal?: AbortSignal) {
