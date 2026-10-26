@@ -16,10 +16,13 @@ type Model struct {
 	recipes  []Recipe
 	index    map[int]int
 	vec      [][]float64 // blended TF-IDF + embedding, unit length
-	emb      [][]float64 // embedding alone (nil per recipe when missing)
+	emb      [][]float64 // centred embedding alone (nil per recipe when missing)
 	vocab    []string
 	tfidf    [][]float64
 	families clustering
+	// Embedding-similarity cut-offs calibrated on this library (see
+	// calibrate); fixed fallbacks apply when too few recipes are embedded.
+	sameDish, samePick float64
 }
 
 // Build clusters recipes into flavour families. seed makes it deterministic.
@@ -43,10 +46,77 @@ func Build(recipes []Recipe, seed uint64) *Model {
 		if dims > 0 && len(r.Embedding) == dims {
 			m.emb[i] = toFloat64(r.Embedding)
 		}
+	}
+	centre(m.emb)
+	m.calibrate()
+	for i := range recipes {
 		m.vec[i] = blend(m.tfidf[i], m.emb[i], dims)
 	}
 	m.families = chooseFamilies(m.vec, seed)
 	return m
+}
+
+// centre subtracts the mean embedding and re-normalises. Embedding models
+// crowd recipes into a narrow cone (with EmbeddingGemma's clustering prompt
+// two random recipes score ~0.80), which would shrink the embedding's say in
+// the blend; centring spreads them back out.
+func centre(emb [][]float64) {
+	var mean []float64
+	n := 0
+	for _, e := range emb {
+		if e == nil {
+			continue
+		}
+		if mean == nil {
+			mean = make([]float64, len(e))
+		}
+		for d, x := range e {
+			mean[d] += x
+		}
+		n++
+	}
+	if n < 2 {
+		return
+	}
+	for i, e := range emb {
+		if e == nil {
+			continue
+		}
+		v := make([]float64, len(e))
+		for d, x := range e {
+			v[d] = x - mean[d]/float64(n)
+		}
+		emb[i] = normalize(v)
+	}
+}
+
+// calibrate sets the same-dish and near-twin cut-offs as percentiles of this
+// library's own pairwise embedding similarities, so they hold for any model or
+// prompt. Measured on 159 confirmed duplicate pairs from the library clean-up,
+// the cut-off that catches 96% of repeats while hiding 7.7% of related
+// same-cuisine dishes sat at the top 0.51% of all pairs, for EmbeddingGemma
+// both with and without its clustering prompt (raw cosines 0.77 vs 0.93).
+// The guard leans towards recall: hiding a related dish costs little, showing
+// a repeat is the annoyance it exists for.
+func (m *Model) calibrate() {
+	m.sameDish, m.samePick = sameDishFallback, samePickFallback
+	var sims []float64
+	for i, a := range m.emb {
+		if a == nil {
+			continue
+		}
+		for _, b := range m.emb[i+1:] {
+			if b != nil {
+				sims = append(sims, dot(a, b))
+			}
+		}
+	}
+	if len(sims) < 1000 { // under ~45 embedded recipes the tail is too noisy
+		return
+	}
+	slices.Sort(sims)
+	top := func(share float64) float64 { return sims[int(float64(len(sims)-1)*(1-share))] }
+	m.sameDish, m.samePick = top(sameDishShare), top(samePickShare)
 }
 
 // Families returns the number of flavour families.
@@ -116,17 +186,15 @@ type Options struct {
 const (
 	// lovedRating is the minimum average rating that seeds the similar lane.
 	lovedRating = 8.0
-	// sameDishEmbedding / sameDishTFIDF: above this similarity to something
-	// already cooked, a candidate is the same dish again, not something new.
-	// Measured with embeddinggemma on 159 confirmed duplicate pairs from the
-	// library clean-up: 0.77 catches 96% of repeats while treating 7.7% of
-	// same-cuisine related dishes as repeats (0.82 would miss 19% of repeats).
-	// Hiding a related dish costs little; showing a repeat is the annoyance
-	// this guard exists for, so it leans towards recall.
-	sameDishEmbedding = 0.77
-	sameDishTFIDF     = 0.60
-	// samePickEmbedding keeps two picks in one run from being near-twins.
-	samePickEmbedding = 0.75
+	// A candidate this similar to something already cooked is the same dish
+	// again; two picks this similar are near-twins. Embedding cut-offs are
+	// the top shares of library pair similarities (see calibrate), with
+	// fallbacks for small libraries; TF-IDF applies to recipes without one.
+	sameDishShare    = 0.0051
+	samePickShare    = 0.00775
+	sameDishFallback = 0.77
+	samePickFallback = 0.75
+	sameDishTFIDF    = 0.60
 )
 
 // appeal maps a rating onto 0..1 using the user's scale: 7+ is good food,
@@ -179,7 +247,7 @@ func (m *Model) Recommend(fb map[int]Feedback, opt Options) []Pick {
 	sameDish := func(i int) bool {
 		for _, j := range cooked {
 			if m.emb[i] != nil && m.emb[j] != nil {
-				if dot(m.emb[i], m.emb[j]) > sameDishEmbedding {
+				if dot(m.emb[i], m.emb[j]) > m.sameDish {
 					return true
 				}
 			} else if dot(m.tfidf[i], m.tfidf[j]) > sameDishTFIDF {
@@ -211,7 +279,7 @@ func (m *Model) Recommend(fb map[int]Feedback, opt Options) []Pick {
 			if a == nil || b == nil {
 				a, b = m.vec[p], m.vec[i]
 			}
-			if dot(a, b) > samePickEmbedding {
+			if dot(a, b) > m.samePick {
 				return true
 			}
 		}

@@ -61,8 +61,22 @@ func (s *Service) Start(ctx context.Context) {
 	}()
 }
 
-func embedText(r database.RecommendRecipe) string {
-	return fmt.Sprintf("%s. %s Cuisine: %s. Ingredients: %s.",
+// embedPrefix is the task instruction a model expects for clustering-style
+// similarity. On the recipe benchmark EmbeddingGemma's clustering prompt
+// improved flavour structure (AUC 0.933 → 0.953) at no cost to duplicate
+// detection; models without a documented prompt get none.
+func embedPrefix(model string) string {
+	switch {
+	case strings.HasPrefix(model, "embeddinggemma"):
+		return "task: clustering | query: "
+	case strings.HasPrefix(model, "nomic-embed-text"):
+		return "clustering: "
+	}
+	return ""
+}
+
+func embedText(model string, r database.RecommendRecipe) string {
+	return embedPrefix(model) + fmt.Sprintf("%s. %s Cuisine: %s. Ingredients: %s.",
 		r.Title, r.Description, r.Cuisine, strings.Join(r.Ingredients, ", "))
 }
 
@@ -85,7 +99,7 @@ func (s *Service) syncEmbeddings(ctx context.Context) error {
 	}
 	var stale []database.RecommendRecipe
 	for _, r := range recipes {
-		if r.TextHash != textHash(client.Model(), embedText(r)) {
+		if r.TextHash != textHash(client.Model(), embedText(client.Model(), r)) {
 			stale = append(stale, r)
 		}
 	}
@@ -93,7 +107,7 @@ func (s *Service) syncEmbeddings(ctx context.Context) error {
 		batch := stale[start:min(start+embedBatch, len(stale))]
 		texts := make([]string, len(batch))
 		for i, r := range batch {
-			texts[i] = embedText(r)
+			texts[i] = embedText(client.Model(), r)
 		}
 		vecs, err := client.Embed(ctx, texts)
 		if err != nil {
@@ -157,7 +171,7 @@ func (s *Service) currentModel(ctx context.Context) (*Model, error) {
 	// rebuilds with the fresh embeddings.
 	if client := s.pool.AcquireWithTag(EmbeddingTag); client != nil {
 		for _, r := range rows {
-			if r.TextHash != textHash(client.Model(), embedText(r)) {
+			if r.TextHash != textHash(client.Model(), embedText(client.Model(), r)) {
 				select {
 				case s.sync <- struct{}{}:
 				default: // a sync is already pending

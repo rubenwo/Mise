@@ -143,3 +143,57 @@ func TestAppealFollowsUserScale(t *testing.T) {
 		}
 	}
 }
+
+// withEmbeddings gives each recipe a group direction plus noise, optionally
+// pushed towards a shared direction so every pair looks similar — the
+// crowding an instruction-prompted embedding model produces.
+func withEmbeddings(recipes []Recipe, perGroup int, crowd float64) []Recipe {
+	rng := rand.New(rand.NewPCG(3, 4))
+	const dims = 32
+	shared := make([]float64, dims)
+	for d := range shared {
+		shared[d] = rng.NormFloat64()
+	}
+	groups := map[int][]float64{}
+	out := make([]Recipe, len(recipes))
+	for i, r := range recipes {
+		g := i / perGroup
+		if groups[g] == nil {
+			groups[g] = make([]float64, dims)
+			for d := range dims {
+				groups[g][d] = rng.NormFloat64()
+			}
+		}
+		v := make([]float32, dims)
+		for d := range dims {
+			v[d] = float32(groups[g][d] + 0.3*rng.NormFloat64() + crowd*shared[d])
+		}
+		r.Embedding = v
+		out[i] = r
+	}
+	return out
+}
+
+func TestCalibrationSurvivesCrowdedEmbeddings(t *testing.T) {
+	base := library(12, 8)
+	plain := Build(withEmbeddings(base, 8, 0), 1)
+	crowded := Build(withEmbeddings(base, 8, 6), 1)
+	if crowded.sameDish == sameDishFallback {
+		t.Fatal("crowded model fell back to the fixed threshold instead of calibrating")
+	}
+	fb := map[int]Feedback{1: {CookCount: 1, AvgRating: rating(9)}}
+	a := plain.Recommend(fb, Options{Limit: 10, Seed: 5, SimilarShare: 0.25})
+	b := crowded.Recommend(fb, Options{Limit: 10, Seed: 5, SimilarShare: 0.25})
+	if len(b) < 10 {
+		t.Fatalf("crowded embeddings blocked picks as near-twins: got %d of 10", len(b))
+	}
+	same := 0
+	for i := range a {
+		if a[i].RecipeID == b[i].RecipeID {
+			same++
+		}
+	}
+	if same < 7 {
+		t.Errorf("crowding the embeddings changed %d of 10 picks", 10-same)
+	}
+}
